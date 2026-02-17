@@ -1,0 +1,268 @@
+const express = require('express');
+const router = express.Router();
+const { protect } = require('../middleware/auth');
+const Message = require('../models/Message');
+
+// Get messages between two users
+router.get('/:userId', protect, async (req, res) => {
+  try {
+    const messages = await Message.find({
+      $or: [
+        { sender: req.user._id, receiver: req.params.userId, deletedFor: { $ne: req.user._id } },
+        { sender: req.params.userId, receiver: req.user._id, deletedFor: { $ne: req.user._id } }
+      ],
+      deletedForEveryone: false
+    })
+    .populate('sender', 'username profilePicture')
+    .populate('receiver', 'username profilePicture')
+    .populate('replyTo')
+    .sort({ createdAt: 1 });
+
+    res.json(messages);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Send message
+router.post('/', protect, async (req, res) => {
+  try {
+    const { receiver, content, messageType, group, replyTo, silent, attachments } = req.body;
+
+    const message = await Message.create({
+      sender: req.user._id,
+      receiver: receiver || null,
+      group: group || null,
+      content,
+      messageType: messageType || 'text',
+      replyTo: replyTo || null,
+      silent: silent || false,
+      attachments: attachments || [],
+      status: 'sent'
+    });
+
+    const populatedMessage = await Message.findById(message._id)
+      .populate('sender', 'username profilePicture')
+      .populate('receiver', 'username profilePicture')
+      .populate('replyTo');
+
+    res.status(201).json(populatedMessage);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Mark message as read
+router.put('/:messageId/read', protect, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.messageId);
+    
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    // Check if already read by this user
+    const alreadyRead = message.readBy.some(
+      read => read.user.toString() === req.user._id.toString()
+    );
+
+    if (!alreadyRead) {
+      message.readBy.push({ user: req.user._id });
+      message.status = 'read';
+      await message.save();
+    }
+
+    res.json(message);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Add reaction to message
+router.post('/:messageId/react', protect, async (req, res) => {
+  try {
+    const { emoji } = req.body;
+    const message = await Message.findById(req.params.messageId);
+
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    // Check if user already reacted with this emoji
+    const existingReaction = message.reactions.findIndex(
+      r => r.user.toString() === req.user._id.toString() && r.emoji === emoji
+    );
+
+    if (existingReaction !== -1) {
+      // Remove reaction
+      message.reactions.splice(existingReaction, 1);
+    } else {
+      // Add reaction
+      message.reactions.push({
+        user: req.user._id,
+        emoji
+      });
+    }
+
+    await message.save();
+    res.json(message);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Edit message
+router.put('/:messageId/edit', protect, async (req, res) => {
+  try {
+    const { content } = req.body;
+    const message = await Message.findById(req.params.messageId);
+
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    if (message.sender.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to edit this message' });
+    }
+
+    // Check if message is within edit time limit (48 hours)
+    const hoursSinceCreation = (Date.now() - message.createdAt) / (1000 * 60 * 60);
+    if (hoursSinceCreation > 48) {
+      return res.status(400).json({ message: 'Message edit time limit exceeded' });
+    }
+
+    message.originalContent = message.content;
+    message.content = content;
+    message.edited = true;
+    message.editedAt = Date.now();
+    await message.save();
+
+    res.json(message);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Delete message
+router.delete('/:messageId', protect, async (req, res) => {
+  try {
+    const { deleteForEveryone } = req.body;
+    const message = await Message.findById(req.params.messageId)
+      .populate('sender', '_id')
+      .populate('receiver', '_id');
+
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    if (deleteForEveryone) {
+      // Only sender can delete for everyone
+      if (message.sender._id.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Not authorized' });
+      }
+
+      // Check if within delete time limit (1 hour)
+      const minutesSinceCreation = (Date.now() - message.createdAt) / (1000 * 60);
+      if (minutesSinceCreation > 60) {
+        return res.status(400).json({ message: 'Delete time limit exceeded' });
+      }
+
+      message.deletedForEveryone = true;
+      message.content = 'This message was deleted';
+    } else {
+      // Delete for self
+      if (!message.deletedFor.includes(req.user._id)) {
+        message.deletedFor.push(req.user._id);
+      }
+    }
+
+    await message.save();
+    
+    // Return the receiver ID so frontend can emit socket event
+    res.json({ 
+      message: 'Message deleted', 
+      deletedForEveryone,
+      receiverId: message.receiver?._id 
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Pin message
+router.put('/:messageId/pin', protect, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.messageId);
+
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    message.pinned = !message.pinned;
+    message.pinnedAt = message.pinned ? Date.now() : null;
+    message.pinnedBy = message.pinned ? req.user._id : null;
+    await message.save();
+
+    res.json(message);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Forward message
+router.post('/:messageId/forward', protect, async (req, res) => {
+  try {
+    const { receiverIds } = req.body; // Array of user IDs
+    const originalMessage = await Message.findById(req.params.messageId);
+
+    if (!originalMessage) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    const forwardedMessages = [];
+
+    for (const receiverId of receiverIds) {
+      const forwardedMessage = await Message.create({
+        sender: req.user._id,
+        receiver: receiverId,
+        content: originalMessage.content,
+        messageType: originalMessage.messageType,
+        attachments: originalMessage.attachments,
+        forwarded: true,
+        forwardedFrom: originalMessage.sender,
+        status: 'sent'
+      });
+
+      forwardedMessages.push(forwardedMessage);
+    }
+
+    res.status(201).json(forwardedMessages);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Search messages
+router.get('/search/:query', protect, async (req, res) => {
+  try {
+    const messages = await Message.find({
+      $or: [
+        { sender: req.user._id },
+        { receiver: req.user._id }
+      ],
+      content: { $regex: req.params.query, $options: 'i' },
+      deletedForEveryone: false,
+      deletedFor: { $ne: req.user._id }
+    })
+    .populate('sender', 'username profilePicture')
+    .populate('receiver', 'username profilePicture')
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+    res.json(messages);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+module.exports = router;
