@@ -244,12 +244,24 @@ The application features a warm, inviting tea-themed design:
 - `GET /api/users` - Get all users
 - `GET /api/users/search?query=` - Search users
 - `GET /api/users/:id` - Get user by ID
-- `PUT /api/users/profile` - Update profile
+- `PUT /api/users/profile` - Update profile (bio, department, campus, social links)
+- `GET /api/users/department/:deptName` - Discover peers in the same department
 
-### Messages
+### Messages & Collaboration
 - `GET /api/messages/:userId` - Get messages with user
 - `POST /api/messages` - Send message
 - `PUT /api/messages/:messageId/read` - Mark as read
+- `GET /api/messages/search/:query` - Simple text search across messages
+- `GET /api/messages/search/advanced/filter` - Filter messages by chat, type, keyword, and pagination
+- `PUT /api/messages/:messageId/pin` - Toggle pin/unpin status on a message
+- `GET /api/messages/pinned/:targetId` - Get all pinned messages in a conversation
+- `PUT /api/messages/:messageId/star` - Bookmark/star a message
+- `GET /api/messages/starred/saved` - View all personal bookmarked messages
+- `PUT /api/messages/:messageId/reactions` - Add/toggle emoji reaction (`emoji`)
+
+### Diagnostics & Verification
+- `npm run test:db` (in `server/`) - Validate MongoDB Atlas credentials and IP whitelist connectivity
+- `GET /api/health` - Real-time API and database status monitor
 
 ### Groups
 - `GET /api/groups` - Get user's groups
