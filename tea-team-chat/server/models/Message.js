@@ -89,6 +89,11 @@ const messageSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Starred / Saved Messages (personal bookmarks)
+  starredBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   // Delete
   deletedFor: [{
     type: mongoose.Schema.Types.ObjectId,

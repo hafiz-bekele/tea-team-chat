@@ -315,6 +315,106 @@ router.get('/search/advanced/filter', protect, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Server error in advanced search', error: error.message });
   }
+// Toggle pin/unpin on a message
+router.put('/:messageId/pin', protect, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.messageId);
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    message.pinned = !message.pinned;
+    if (message.pinned) {
+      message.pinnedAt = new Date();
+      message.pinnedBy = req.user._id;
+    } else {
+      message.pinnedAt = null;
+      message.pinnedBy = null;
+    }
+
+    await message.save();
+    const updated = await Message.findById(message._id)
+      .populate('sender', 'username profilePicture')
+      .populate('pinnedBy', 'username');
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error while toggling pin', error: error.message });
+  }
+});
+
+// Fetch all pinned messages in a conversation (1-on-1 or group)
+router.get('/pinned/:targetId', protect, async (req, res) => {
+  try {
+    const { targetId } = req.params;
+    const filter = {
+      pinned: true,
+      deletedForEveryone: false,
+      deletedFor: { $ne: req.user._id },
+      $or: [
+        { sender: req.user._id, receiver: targetId },
+        { sender: targetId, receiver: req.user._id },
+        { group: targetId }
+      ]
+    };
+
+    const pinnedMessages = await Message.find(filter)
+      .populate('sender', 'username profilePicture')
+      .populate('pinnedBy', 'username')
+      .sort({ pinnedAt: -1 });
+
+    res.json(pinnedMessages);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching pinned messages', error: error.message });
+  }
+});
+
+// Toggle star/bookmark on a message for current user
+router.put('/:messageId/star', protect, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.messageId);
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    const userIdStr = req.user._id.toString();
+    const hasStarred = (message.starredBy || []).some(id => id.toString() === userIdStr);
+
+    if (hasStarred) {
+      message.starredBy = message.starredBy.filter(id => id.toString() !== userIdStr);
+    } else {
+      message.starredBy = message.starredBy || [];
+      message.starredBy.push(req.user._id);
+    }
+
+    await message.save();
+    res.json({
+      messageId: message._id,
+      isStarred: !hasStarred,
+      starredCount: message.starredBy.length
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error while toggling star', error: error.message });
+  }
+});
+
+// Get all starred/bookmarked messages for current user
+router.get('/starred/saved', protect, async (req, res) => {
+  try {
+    const starredMessages = await Message.find({
+      starredBy: req.user._id,
+      deletedForEveryone: false,
+      deletedFor: { $ne: req.user._id }
+    })
+    .populate('sender', 'username profilePicture')
+    .populate('receiver', 'username profilePicture')
+    .populate('group', 'name')
+    .sort({ createdAt: -1 });
+
+    res.json(starredMessages);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching starred messages', error: error.message });
+  }
 });
 
 module.exports = router;
