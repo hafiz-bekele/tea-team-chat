@@ -242,7 +242,7 @@ router.post('/:messageId/forward', protect, async (req, res) => {
   }
 });
 
-// Search messages
+// Search messages (simple query)
 router.get('/search/:query', protect, async (req, res) => {
   try {
     const messages = await Message.find({
@@ -262,6 +262,58 @@ router.get('/search/:query', protect, async (req, res) => {
     res.json(messages);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Advanced message search with filtering (chatId, messageType, pagination)
+router.get('/search/advanced/filter', protect, async (req, res) => {
+  try {
+    const { q, targetId, messageType, limit = 50, page = 1 } = req.query;
+    
+    const filter = {
+      deletedForEveryone: false,
+      deletedFor: { $ne: req.user._id }
+    };
+
+    if (q) {
+      filter.content = { $regex: q.trim(), $options: 'i' };
+    }
+
+    if (messageType && messageType !== 'all') {
+      filter.messageType = messageType;
+    }
+
+    if (targetId) {
+      filter.$or = [
+        { sender: req.user._id, receiver: targetId },
+        { sender: targetId, receiver: req.user._id },
+        { group: targetId }
+      ];
+    } else {
+      filter.$or = [
+        { sender: req.user._id },
+        { receiver: req.user._id }
+      ];
+    }
+
+    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const totalCount = await Message.countDocuments(filter);
+    const messages = await Message.find(filter)
+      .populate('sender', 'username profilePicture')
+      .populate('receiver', 'username profilePicture')
+      .populate('group', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit, 10));
+
+    res.json({
+      total: totalCount,
+      page: parseInt(page, 10),
+      totalPages: Math.ceil(totalCount / parseInt(limit, 10)),
+      results: messages
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error in advanced search', error: error.message });
   }
 });
 
