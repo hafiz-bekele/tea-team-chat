@@ -19,6 +19,7 @@ import AuthSuccess from './pages/AuthSuccess';
 // Components
 import PrivateRoute from './components/PrivateRoute';
 import NetworkStatusBanner from './components/NetworkStatusBanner';
+import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
 
 const theme = createTheme({
   palette: {
@@ -66,6 +67,7 @@ function App() {
           <SocketProvider>
             <div className="App">
               <NetworkStatusBanner />
+              <KeyboardShortcutsModal />
               <Toaster 
                 position="top-right"
                 toastOptions={{
