@@ -417,4 +417,53 @@ router.get('/starred/saved', protect, async (req, res) => {
   }
 });
 
+// Add or toggle emoji reaction on a message
+router.put('/:messageId/reactions', protect, async (req, res) => {
+  try {
+    const { emoji } = req.body;
+    if (!emoji) {
+      return res.status(400).json({ message: 'Emoji is required' });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    const userIdStr = req.user._id.toString();
+    const existingIndex = (message.reactions || []).findIndex(
+      r => r.user && r.user.toString() === userIdStr
+    );
+
+    if (existingIndex > -1) {
+      if (message.reactions[existingIndex].emoji === emoji) {
+        // Toggle off if same emoji clicked again
+        message.reactions.splice(existingIndex, 1);
+      } else {
+        // Update to new emoji
+        message.reactions[existingIndex].emoji = emoji;
+        message.reactions[existingIndex].createdAt = new Date();
+      }
+    } else {
+      // Add new reaction
+      message.reactions = message.reactions || [];
+      message.reactions.push({
+        user: req.user._id,
+        emoji,
+        createdAt: new Date()
+      });
+    }
+
+    await message.save();
+
+    const updated = await Message.findById(message._id)
+      .populate('sender', 'username profilePicture')
+      .populate('reactions.user', 'username profilePicture');
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error updating reaction', error: error.message });
+  }
+});
+
 module.exports = router;
