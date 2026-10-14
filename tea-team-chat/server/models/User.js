@@ -29,6 +29,19 @@ const userSchema = new mongoose.Schema({
   },
   firstName: String,
   lastName: String,
+  role: {
+    type: String,
+    enum: ['student', 'teacher', 'ta'],
+    default: 'student'
+  },
+  officeHours: {
+    type: String,
+    default: 'Available for consultation'
+  },
+  academicTitle: {
+    type: String,
+    default: 'Student'
+  },
   bio: {
     type: String,
     maxlength: 200,
@@ -36,7 +49,7 @@ const userSchema = new mongoose.Schema({
   },
   department: {
     type: String,
-    default: 'General'
+    default: 'Computer Science'
   },
   faculty: {
     type: String,

@@ -63,7 +63,10 @@ router.put('/profile', protect, async (req, res) => {
       campus, 
       socialLinks, 
       firstName, 
-      lastName 
+      lastName,
+      role,
+      officeHours,
+      academicTitle
     } = req.body;
     
     const user = await User.findById(req.user._id);
@@ -78,6 +81,9 @@ router.put('/profile', protect, async (req, res) => {
     if (campus) user.campus = campus;
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
+    if (role) user.role = role;
+    if (officeHours) user.officeHours = officeHours;
+    if (academicTitle) user.academicTitle = academicTitle;
     if (socialLinks) {
       user.socialLinks = {
         ...user.socialLinks,

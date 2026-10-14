@@ -90,6 +90,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/posts', require('./routes/posts'));
 
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));
