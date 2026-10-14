@@ -54,12 +54,35 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/tea-team-chat', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log('✅ MongoDB connected successfully'))
-.catch(err => console.error('❌ MongoDB connection error:', err));
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/tea-team-chat';
+const isAtlas = mongoUri.includes('mongodb.net') || mongoUri.startsWith('mongodb+srv://');
+
+// Connection lifecycle event listeners
+mongoose.connection.on('connected', () => {
+  console.log(`✅ MongoDB connected successfully [${isAtlas ? 'MongoDB Atlas (Cloud)' : 'Local MongoDB'}]`);
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('❌ MongoDB connection error:', err.message);
+  if (isAtlas) {
+    console.error('👉 MongoDB Atlas Troubleshooting Tips:');
+    console.error('   1. IP Whitelist: Ensure your current IP (or 0.0.0.0/0) is allowed in MongoDB Atlas Network Access.');
+    console.error('   2. Credentials: Check your database username and password in .env.');
+    console.error('   3. Special Characters: If your password has special characters (@, #, :, %, etc.), URL-encode them.');
+  }
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('⚠️ MongoDB connection lost. Reconnecting...');
+});
+
+// Connect to MongoDB
+mongoose.connect(mongoUri, {
+  serverSelectionTimeoutMS: 10000, // Timeout after 10 seconds instead of hanging
+  socketTimeoutMS: 45000
+}).catch((err) => {
+  // Initial connection error is handled by the event listener above
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -73,8 +96,15 @@ app.use('/uploads', express.static('uploads'));
 
 // Health check
 app.get('/api/health', (req, res) => {
+  const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  const dbStatus = dbStates[mongoose.connection.readyState] || 'unknown';
+
   res.json({ 
-    status: 'ok', 
+    status: dbStatus === 'connected' ? 'ok' : 'degraded',
+    database: {
+      status: dbStatus,
+      type: isAtlas ? 'MongoDB Atlas' : 'Local MongoDB'
+    },
     message: 'Tea Team Chat API is running',
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString()
