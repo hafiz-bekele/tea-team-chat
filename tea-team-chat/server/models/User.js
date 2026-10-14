@@ -31,8 +31,31 @@ const userSchema = new mongoose.Schema({
   lastName: String,
   bio: {
     type: String,
-    maxlength: 140,
+    maxlength: 200,
     default: ''
+  },
+  department: {
+    type: String,
+    default: 'General'
+  },
+  faculty: {
+    type: String,
+    default: 'Wollo University'
+  },
+  yearOfStudy: {
+    type: Number,
+    min: 1,
+    max: 7,
+    default: 1
+  },
+  campus: {
+    type: String,
+    default: 'Wollo University - Main Campus'
+  },
+  socialLinks: {
+    github: { type: String, default: '' },
+    telegram: { type: String, default: '' },
+    linkedin: { type: String, default: '' }
   },
   profilePicture: {
     type: String,

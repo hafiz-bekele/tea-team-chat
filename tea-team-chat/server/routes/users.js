@@ -52,17 +52,60 @@ router.get('/:id', protect, async (req, res) => {
 // Update user profile
 router.put('/profile', protect, async (req, res) => {
   try {
-    const { username, profilePicture, status } = req.body;
+    const { 
+      username, 
+      profilePicture, 
+      status, 
+      bio, 
+      department, 
+      faculty, 
+      yearOfStudy, 
+      campus, 
+      socialLinks, 
+      firstName, 
+      lastName 
+    } = req.body;
+    
     const user = await User.findById(req.user._id);
 
     if (username) user.username = username;
-    if (profilePicture) user.profilePicture = profilePicture;
+    if (profilePicture !== undefined) user.profilePicture = profilePicture;
     if (status) user.status = status;
+    if (bio !== undefined) user.bio = bio;
+    if (department) user.department = department;
+    if (faculty) user.faculty = faculty;
+    if (yearOfStudy) user.yearOfStudy = Number(yearOfStudy);
+    if (campus) user.campus = campus;
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
+    if (socialLinks) {
+      user.socialLinks = {
+        ...user.socialLinks,
+        ...socialLinks
+      };
+    }
 
     await user.save();
     res.json(user);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error updating profile', error: error.message });
+  }
+});
+
+// Discover students in the same department
+router.get('/department/:deptName', protect, async (req, res) => {
+  try {
+    const { deptName } = req.params;
+    const students = await User.find({
+      _id: { $ne: req.user._id },
+      department: { $regex: deptName, $options: 'i' }
+    })
+    .select('-password')
+    .limit(30);
+
+    res.json(students);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error finding department peers', error: error.message });
   }
 });
 
