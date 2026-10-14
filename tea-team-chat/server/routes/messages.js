@@ -315,6 +315,8 @@ router.get('/search/advanced/filter', protect, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Server error in advanced search', error: error.message });
   }
+});
+
 // Toggle pin/unpin on a message
 router.put('/:messageId/pin', protect, async (req, res) => {
   try {

@@ -31,30 +31,36 @@ const register = async (req, res) => {
     // Generate verification token
     const verificationToken = generateToken(user._id);
 
-    // Send verification email
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+    // Send verification email (non-blocking fallback)
+    try {
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+          }
+        });
+
+        const mailOptions = {
+          from: process.env.EMAIL_USER,
+          to: email,
+          subject: 'Welcome to Tea Team Chat - Verify Your Email',
+          html: `
+            <h2>Welcome to Tea Team Chat!</h2>
+            <p>Hi ${username},</p>
+            <p>Thank you for joining the Wollo University student community.</p>
+            <p>Click the link below to verify your email:</p>
+            <a href="${process.env.CLIENT_URL}/verify/${verificationToken}">Verify Email</a>
+            <p>If you didn't create this account, please ignore this email.</p>
+          `
+        };
+
+        await transporter.sendMail(mailOptions);
       }
-    });
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Welcome to Tea Team Chat - Verify Your Email',
-      html: `
-        <h2>Welcome to Tea Team Chat!</h2>
-        <p>Hi ${username},</p>
-        <p>Thank you for joining the Wollo University student community.</p>
-        <p>Click the link below to verify your email:</p>
-        <a href="${process.env.CLIENT_URL}/verify/${verificationToken}">Verify Email</a>
-        <p>If you didn't create this account, please ignore this email.</p>
-      `
-    };
-
-    await transporter.sendMail(mailOptions);
+    } catch (emailErr) {
+      console.warn('⚠️ Could not send verification email (check EMAIL_USER/EMAIL_PASS):', emailErr.message);
+    }
 
     res.status(201).json({
       _id: user._id,
