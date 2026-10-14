@@ -3,16 +3,17 @@ const router = express.Router();
 const passport = require('passport');
 const { register, login, getMe, logout } = require('../controllers/authController');
 const { protect, generateToken } = require('../middleware/auth');
+const { authLimiter } = require('../middleware/rateLimiter');
 const { body } = require('express-validator');
 
-// Regular auth routes
-router.post('/register', [
+// Regular auth routes (protected by rate limiter)
+router.post('/register', authLimiter, [
   body('username').isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
   body('email').isEmail().withMessage('Please enter a valid email'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
 ], register);
 
-router.post('/login', login);
+router.post('/login', authLimiter, login);
 router.get('/me', protect, getMe);
 router.post('/logout', protect, logout);
 
