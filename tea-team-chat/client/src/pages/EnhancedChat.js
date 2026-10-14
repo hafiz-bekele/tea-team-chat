@@ -30,6 +30,13 @@ import {
 } from '@mui/material';
 import {
   Menu as MenuIcon,
+  MenuOpen as MenuOpenIcon,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
+  PushPin as PinIcon,
+  PushPinOutlined as PinOutlinedIcon,
+  DoneAll as ReadIcon,
+  Clear as ClearIcon,
   Send as SendIcon,
   Logout as LogoutIcon,
   Settings as SettingsIcon,
@@ -69,8 +76,6 @@ import CampusHub from '../components/CampusHub';
 import ProfileEditModal from '../components/ProfileEditModal';
 import { translations } from '../utils/translations';
 
-const drawerWidth = 320;
-
 const EnhancedChat = () => {
   const { user, logout, setUser } = useAuth();
   const { socket } = useSocket();
@@ -102,6 +107,37 @@ const EnhancedChat = () => {
   const [activeView, setActiveView] = useState('hub');
   const [searchQuery, setSearchQuery] = useState('');
   const [themeMode, setThemeMode] = useState(() => localStorage.getItem('tea_chat_theme') || 'light');
+
+  // Collapsible Sidebar & Chat Filter State
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('tea_chat_sidebar');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [chatFilter, setChatFilter] = useState('all'); // 'all', 'teachers', 'students', 'online'
+  const [pinnedUserIds, setPinnedUserIds] = useState(() => new Set(['teacher-1']));
+
+  const toggleSidebar = () => {
+    setSidebarOpen(prev => {
+      const next = !prev;
+      localStorage.setItem('tea_chat_sidebar', String(next));
+      return next;
+    });
+  };
+
+  const togglePinUser = (userId, e) => {
+    if (e) e.stopPropagation();
+    setPinnedUserIds(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+        toast.success('Chat unpinned');
+      } else {
+        next.add(userId);
+        toast.success('Chat pinned to top');
+      }
+      return next;
+    });
+  };
 
   const t = translations[lang] || translations.en;
 
@@ -683,27 +719,68 @@ const EnhancedChat = () => {
     return null;
   };
 
-  // Sidebar drawer content
-  const filteredUsers = users.filter(u => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      u.username?.toLowerCase().includes(q) ||
-      u.department?.toLowerCase().includes(q) ||
-      u.role?.toLowerCase().includes(q)
-    );
-  });
+  // Sidebar drawer content with Search, Role Filters, and Pinned chats
+  const filteredUsers = users
+    .filter(u => {
+      // Search filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matches = (
+          u.username?.toLowerCase().includes(q) ||
+          u.department?.toLowerCase().includes(q) ||
+          u.role?.toLowerCase().includes(q)
+        );
+        if (!matches) return false;
+      }
+      // Role & Status chip filter
+      if (chatFilter === 'teachers') return u.role === 'teacher';
+      if (chatFilter === 'students') return u.role === 'student' || u.role === 'ta';
+      if (chatFilter === 'online') return onlineUsers.has(u._id);
+      return true;
+    })
+    .sort((a, b) => {
+      const aPinned = pinnedUserIds.has(a._id);
+      const bPinned = pinnedUserIds.has(b._id);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return 0;
+    });
+
+  const getChatSnippet = (targetUser, idx) => {
+    if (targetUser.role === 'teacher') {
+      return targetUser.officeHours || 'Consultation hours available';
+    }
+    const sampleSnippets = [
+      'Just reviewed the lab exercise notes',
+      'Are we meeting at the library?',
+      'Thanks for sending the lecture slides!',
+      'See you in the study pod session!'
+    ];
+    return sampleSnippets[idx % sampleSnippets.length];
+  };
+
+  const getChatTimestamp = (idx) => {
+    const times = ['11:42 AM', '10:15 AM', 'Yesterday', 'Tuesday', 'Oct 12'];
+    return times[idx % times.length];
+  };
 
   const drawer = (
-    <Box sx={{ height: '100%', background: '#FFF8E7', display: 'flex', flexDirection: 'column' }}>
-      <Toolbar sx={{ background: '#F5A623', color: 'white', display: 'flex', justifyContent: 'space-between', px: 2 }}>
+    <Box sx={{ height: '100%', background: '#FFFFFF', display: 'flex', flexDirection: 'column', borderRight: '1px solid #E4E6EB' }}>
+      {/* Drawer Header */}
+      <Toolbar sx={{ background: '#F5A623', color: 'white', display: 'flex', justifyContent: 'space-between', px: 2, minHeight: '56px !important' }}>
         <Stack direction="row" spacing={1} alignItems="center">
           <LocalCafeIcon />
-          <Typography variant="h6" noWrap sx={{ fontWeight: 700 }}>
+          <Typography variant="h6" noWrap sx={{ fontWeight: 800, fontSize: '1.05rem' }}>
             {t.appName}
           </Typography>
         </Stack>
-        <Stack direction="row" spacing={0.5}>
+        <Stack direction="row" spacing={0.3} alignItems="center">
+          {/* Hide / Collapse Sidebar Button */}
+          <Tooltip title="Hide Sidebar">
+            <IconButton size="small" color="inherit" onClick={toggleSidebar} sx={{ bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
+              <ChevronLeftIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <Tooltip title={t.language}>
             <IconButton size="small" color="inherit" onClick={handleOpenLangMenu}>
               <LanguageIcon fontSize="small" />
@@ -717,8 +794,8 @@ const EnhancedChat = () => {
         </Stack>
       </Toolbar>
       
-      {/* Search Input */}
-      <Box sx={{ p: 2, pb: 1 }}>
+      {/* Search Input with Clear Button */}
+      <Box sx={{ p: 1.5, pb: 1 }}>
         <TextField
           fullWidth
           placeholder={t.searchPlaceholder}
@@ -728,21 +805,89 @@ const EnhancedChat = () => {
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
-                <SearchIcon sx={{ color: '#8B6F47' }} />
+                <SearchIcon sx={{ color: '#8A8D91', fontSize: 20 }} />
               </InputAdornment>
             ),
+            endAdornment: searchQuery && (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setSearchQuery('')}>
+                  <ClearIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </InputAdornment>
+            )
           }}
           sx={{
             '& .MuiOutlinedInput-root': {
-              background: 'white',
-              borderRadius: 3,
+              background: '#F0F2F5',
+              borderRadius: 5,
+              '& fieldset': { borderColor: 'transparent' },
+              '&:hover fieldset': { borderColor: '#E4E6EB' },
+              '&.Mui-focused fieldset': { borderColor: '#F5A623' }
             }
           }}
         />
       </Box>
 
+      {/* Quick Filter Pills (All, Teachers, Students, Online) */}
+      <Box sx={{ px: 1.5, pb: 1, display: 'flex', gap: 0.8, overflowX: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
+        <Chip
+          label="All"
+          size="small"
+          onClick={() => setChatFilter('all')}
+          sx={{
+            fontWeight: 700,
+            fontSize: '0.72rem',
+            cursor: 'pointer',
+            bgcolor: chatFilter === 'all' ? '#1877F2' : '#F0F2F5',
+            color: chatFilter === 'all' ? '#fff' : '#65676B',
+            '&:hover': { bgcolor: chatFilter === 'all' ? '#0D6EFD' : '#E4E6EB' }
+          }}
+        />
+        <Chip
+          icon={<SchoolIcon sx={{ fontSize: 13, color: chatFilter === 'teachers' ? '#fff !important' : '#1877F2 !important' }} />}
+          label="Teachers"
+          size="small"
+          onClick={() => setChatFilter('teachers')}
+          sx={{
+            fontWeight: 700,
+            fontSize: '0.72rem',
+            cursor: 'pointer',
+            bgcolor: chatFilter === 'teachers' ? '#1877F2' : '#F0F2F5',
+            color: chatFilter === 'teachers' ? '#fff' : '#65676B',
+            '&:hover': { bgcolor: chatFilter === 'teachers' ? '#0D6EFD' : '#E4E6EB' }
+          }}
+        />
+        <Chip
+          icon={<PersonIcon sx={{ fontSize: 13, color: chatFilter === 'students' ? '#fff !important' : '#10B981 !important' }} />}
+          label="Students"
+          size="small"
+          onClick={() => setChatFilter('students')}
+          sx={{
+            fontWeight: 700,
+            fontSize: '0.72rem',
+            cursor: 'pointer',
+            bgcolor: chatFilter === 'students' ? '#1877F2' : '#F0F2F5',
+            color: chatFilter === 'students' ? '#fff' : '#65676B',
+            '&:hover': { bgcolor: chatFilter === 'students' ? '#0D6EFD' : '#E4E6EB' }
+          }}
+        />
+        <Chip
+          label="Online"
+          size="small"
+          onClick={() => setChatFilter('online')}
+          sx={{
+            fontWeight: 700,
+            fontSize: '0.72rem',
+            cursor: 'pointer',
+            bgcolor: chatFilter === 'online' ? '#10B981' : '#F0F2F5',
+            color: chatFilter === 'online' ? '#fff' : '#65676B',
+            '&:hover': { bgcolor: chatFilter === 'online' ? '#059669' : '#E4E6EB' }
+          }}
+        />
+      </Box>
+
       {/* Campus Hub Primary Button */}
-      <Box sx={{ px: 2, py: 1 }}>
+      <Box sx={{ px: 1.5, pb: 1 }}>
         <ListItem
           button
           onClick={() => {
@@ -751,9 +896,9 @@ const EnhancedChat = () => {
           }}
           sx={{
             borderRadius: 2.5,
-            bgcolor: !selectedUser && activeView === 'hub' ? '#F5A623' : '#FFF',
+            py: 1,
+            bgcolor: !selectedUser && activeView === 'hub' ? '#F5A623' : '#F8FAFC',
             color: !selectedUser && activeView === 'hub' ? '#fff' : '#0F172A',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
             border: '1px solid #E2E8F0',
             '&:hover': {
               bgcolor: !selectedUser && activeView === 'hub' ? '#E09212' : '#FFFBEB'
@@ -768,30 +913,35 @@ const EnhancedChat = () => {
           <ListItemText
             primary={t.hubTitle}
             secondary={`${t.feed} • ${t.shorts}`}
-            primaryTypographyProps={{ fontWeight: 700, fontSize: '0.9rem' }}
-            secondaryTypographyProps={{ sx: { fontSize: '0.75rem', color: !selectedUser && activeView === 'hub' ? 'rgba(255,255,255,0.85)' : '#64748B' } }}
+            primaryTypographyProps={{ fontWeight: 700, fontSize: '0.88rem' }}
+            secondaryTypographyProps={{ sx: { fontSize: '0.72rem', color: !selectedUser && activeView === 'hub' ? 'rgba(255,255,255,0.85)' : '#64748B' } }}
           />
         </ListItem>
       </Box>
 
       {/* Chats Section Header */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2, py: 1 }}>
-        <Typography sx={{ fontWeight: 700, color: '#6B4423', fontSize: '0.85rem' }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2, py: 0.8, borderTop: '1px solid #F0F2F5' }}>
+        <Typography sx={{ fontWeight: 700, color: '#65676B', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>
           {t.chats} ({filteredUsers.length})
         </Typography>
-        <Chip
-          size="small"
-          label="Students & Faculty"
-          sx={{ height: 18, fontSize: '0.62rem', bgcolor: 'rgba(245, 166, 35, 0.2)', color: '#8B6F47', fontWeight: 600 }}
-        />
+        {pinnedUserIds.size > 0 && (
+          <Stack direction="row" spacing={0.4} alignItems="center">
+            <PinIcon sx={{ fontSize: 13, color: '#F5A623' }} />
+            <Typography variant="caption" sx={{ color: '#F5A623', fontWeight: 700, fontSize: '0.7rem' }}>
+              Pinned
+            </Typography>
+          </Stack>
+        )}
       </Stack>
 
-      {/* User / Contacts List */}
-      <List sx={{ px: 1, flex: 1, overflowY: 'auto' }}>
-        {filteredUsers.map((u) => {
+      {/* Modern Chat List (WhatsApp / Telegram / Messenger style) */}
+      <List sx={{ px: 1, flex: 1, overflowY: 'auto', py: 0 }}>
+        {filteredUsers.map((u, idx) => {
           const isUserTeacher = u.role === 'teacher';
           const isUserTA = u.role === 'ta';
           const isSelected = selectedUser?._id === u._id && activeView === 'chat';
+          const isPinned = pinnedUserIds.has(u._id);
+          const isOnline = onlineUsers.has(u._id);
 
           return (
             <ListItem
@@ -802,47 +952,81 @@ const EnhancedChat = () => {
                 setActiveView('chat');
               }}
               sx={{
-                borderRadius: 2,
-                mb: 0.5,
-                bgcolor: isSelected ? 'rgba(245, 166, 35, 0.25)' : 'transparent',
-                '&:hover': { bgcolor: 'rgba(245, 166, 35, 0.12)' },
+                borderRadius: 2.5,
+                mb: 0.6,
+                py: 1,
+                px: 1.2,
+                bgcolor: isSelected ? '#EFF6FF' : 'transparent',
+                border: isSelected ? '1px solid #BFDBFE' : '1px solid transparent',
+                transition: 'all 0.15s',
+                '&:hover': {
+                  bgcolor: isSelected ? '#EFF6FF' : '#F0F2F5',
+                  '& .pin-btn': { opacity: 1 }
+                },
               }}
             >
-              <ListItemAvatar sx={{ minWidth: 46 }}>
+              <ListItemAvatar sx={{ minWidth: 48 }}>
                 <Badge
-                  color={onlineUsers.has(u._id) ? 'success' : 'default'}
+                  color={isOnline ? 'success' : 'default'}
                   variant="dot"
                   anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  sx={{
+                    '& .MuiBadge-badge': {
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      border: '2px solid #fff',
+                      bgcolor: isOnline ? '#31A24C' : '#CCD0D5'
+                    }
+                  }}
                 >
                   <Avatar
                     src={u.profilePicture}
                     sx={{
-                      bgcolor: isUserTeacher ? '#3B82F6' : isUserTA ? '#F59E0B' : '#10B981',
-                      width: 36,
-                      height: 36
+                      bgcolor: isUserTeacher ? '#1877F2' : isUserTA ? '#F59E0B' : '#10B981',
+                      width: 40,
+                      height: 40,
+                      border: isUserTeacher ? '2px solid #1877F2' : 'none'
                     }}
                   >
                     {isUserTeacher ? <SchoolIcon fontSize="small" /> : (u.username[0] || '?').toUpperCase()}
                   </Avatar>
                 </Badge>
               </ListItemAvatar>
+
               <ListItemText
                 primary={
-                  <Stack direction="row" spacing={0.8} alignItems="center">
-                    <Typography variant="body2" sx={{ fontWeight: 700, color: '#1E293B', fontSize: '0.88rem' }}>
-                      {u.username}
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Stack direction="row" spacing={0.6} alignItems="center" sx={{ maxWidth: 170 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700, color: '#050505', fontSize: '0.9rem', noWrap: true, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {u.username}
+                      </Typography>
+                      {isUserTeacher && <VerifiedIcon sx={{ fontSize: 14, color: '#1877F2' }} />}
+                    </Stack>
+                    <Typography variant="caption" sx={{ color: isSelected ? '#1877F2' : '#8A8D91', fontSize: '0.7rem', fontWeight: 600 }}>
+                      {getChatTimestamp(idx)}
                     </Typography>
-                    {isUserTeacher && <VerifiedIcon sx={{ fontSize: 14, color: '#3B82F6' }} />}
                   </Stack>
                 }
                 secondary={
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.2 }}>
-                    <Typography variant="caption" sx={{ color: onlineUsers.has(u._id) ? '#10B981' : '#94A3B8', fontWeight: 600 }}>
-                      {onlineUsers.has(u._id) ? 'Online' : 'Offline'}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#64748B', fontSize: '0.72rem' }}>
-                      {isUserTeacher ? t.roleTeacher : u.department || 'Student'}
-                    </Typography>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.3 }}>
+                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ maxWidth: 185 }}>
+                      <ReadIcon sx={{ fontSize: 14, color: isSelected ? '#1877F2' : '#8A8D91' }} />
+                      <Typography variant="caption" sx={{ color: '#65676B', fontSize: '0.74rem', noWrap: true, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {getChatSnippet(u, idx)}
+                      </Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      {isPinned && <PinIcon sx={{ fontSize: 13, color: '#F5A623' }} />}
+                      <IconButton
+                        size="small"
+                        className="pin-btn"
+                        onClick={(e) => togglePinUser(u._id, e)}
+                        sx={{ opacity: isPinned ? 1 : 0, p: 0.3, transition: 'opacity 0.15s' }}
+                      >
+                        {isPinned ? <PinIcon sx={{ fontSize: 14, color: '#F5A623' }} /> : <PinOutlinedIcon sx={{ fontSize: 14, color: '#8A8D91' }} />}
+                      </IconButton>
+                    </Stack>
                   </Stack>
                 }
               />
@@ -852,22 +1036,22 @@ const EnhancedChat = () => {
       </List>
 
       {/* Bottom Profile & Logout */}
-      <Box sx={{ p: 2, bgcolor: '#FFF8E7', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+      <Box sx={{ p: 1.5, bgcolor: '#FFFFFF', borderTop: '1px solid #E4E6EB' }}>
         <Stack
           direction="row"
-          spacing={1.5}
+          spacing={1.2}
           alignItems="center"
-          sx={{ mb: 1.5, p: 1, borderRadius: 2, cursor: 'pointer', bgcolor: 'rgba(255,255,255,0.7)', '&:hover': { bgcolor: '#fff' } }}
+          sx={{ mb: 1.2, p: 1, borderRadius: 2, cursor: 'pointer', bgcolor: '#F0F2F5', '&:hover': { bgcolor: '#E4E6EB' } }}
           onClick={() => setProfileModalOpen(true)}
         >
-          <Avatar sx={{ bgcolor: user?.role === 'teacher' ? '#3B82F6' : '#F5A623', width: 34, height: 34 }}>
+          <Avatar sx={{ bgcolor: user?.role === 'teacher' ? '#1877F2' : '#F5A623', width: 36, height: 36 }}>
             {user?.role === 'teacher' ? <SchoolIcon fontSize="small" /> : (user?.username?.[0] || 'U').toUpperCase()}
           </Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="body2" sx={{ fontWeight: 700, noWrap: true, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#050505', noWrap: true, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.85rem' }}>
               {user?.username}
             </Typography>
-            <Typography variant="caption" sx={{ color: '#64748B', display: 'block', fontSize: '0.7rem' }}>
+            <Typography variant="caption" sx={{ color: '#65676B', display: 'block', fontSize: '0.7rem' }}>
               {user?.role === 'teacher' ? t.roleTeacher : user?.department || 'Student'} • {t.editProfile}
             </Typography>
           </Box>
@@ -876,6 +1060,7 @@ const EnhancedChat = () => {
         <Button
           fullWidth
           variant="contained"
+          size="small"
           startIcon={<LogoutIcon />}
           onClick={handleLogout}
           sx={{
@@ -883,6 +1068,8 @@ const EnhancedChat = () => {
             borderRadius: 2,
             fontWeight: 700,
             textTransform: 'none',
+            py: 0.8,
+            boxShadow: 'none',
             '&:hover': { background: '#D4A574' }
           }}
         >
@@ -893,26 +1080,39 @@ const EnhancedChat = () => {
   );
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh' }}>
+    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* App Bar */}
       <AppBar
         position="fixed"
         sx={{
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` },
+          width: { sm: sidebarOpen ? 'calc(100% - 340px)' : '100%' },
+          ml: { sm: sidebarOpen ? '340px' : 0 },
+          transition: 'width 0.25s ease-in-out, margin 0.25s ease-in-out',
           background: '#F5A623',
           boxShadow: '0 2px 10px rgba(0,0,0,0.08)'
         }}
       >
-        <Toolbar>
+        <Toolbar sx={{ px: { xs: 1, sm: 2 } }}>
+          {/* Mobile Menu Button */}
           <IconButton
             color="inherit"
             edge="start"
             onClick={() => setMobileOpen(!mobileOpen)}
-            sx={{ mr: 2, display: { sm: 'none' } }}
+            sx={{ mr: 1, display: { sm: 'none' } }}
           >
             <MenuIcon />
           </IconButton>
+
+          {/* Desktop Sidebar Toggle Button */}
+          <Tooltip title={sidebarOpen ? "Hide Chat Sidebar" : "Show Chat Sidebar"}>
+            <IconButton
+              color="inherit"
+              onClick={toggleSidebar}
+              sx={{ mr: 1.5, display: { xs: 'none', sm: 'inline-flex' } }}
+            >
+              {sidebarOpen ? <MenuOpenIcon /> : <MenuIcon />}
+            </IconButton>
+          </Tooltip>
 
           {selectedUser && activeView === 'chat' ? (
             <>
@@ -991,10 +1191,14 @@ const EnhancedChat = () => {
         </Toolbar>
       </AppBar>
 
-      {/* Sidebar */}
+      {/* Collapsible Sidebar */}
       <Box
         component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+        sx={{
+          width: { sm: sidebarOpen ? 340 : 0 },
+          flexShrink: { sm: 0 },
+          transition: 'width 0.25s ease-in-out'
+        }}
       >
         <Drawer
           variant="temporary"
@@ -1003,31 +1207,41 @@ const EnhancedChat = () => {
           ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: 320 },
           }}
         >
           {drawer}
         </Drawer>
         <Drawer
-          variant="permanent"
+          variant="persistent"
+          anchor="left"
+          open={sidebarOpen}
           sx={{
             display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': {
+              boxSizing: 'border-box',
+              width: 340,
+              borderRight: '1px solid #E4E6EB',
+              transition: 'transform 0.25s ease-in-out'
+            },
           }}
-          open
         >
           {drawer}
         </Drawer>
       </Box>
 
-      {/* Main Chat Area */}
+      {/* Main Chat / Hub Area */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          background: 'linear-gradient(135deg, #FFF8E7 0%, #FFE4B5 100%)',
+          p: { xs: 1.5, md: 3 },
+          width: { sm: sidebarOpen ? 'calc(100% - 340px)' : '100%' },
+          ml: { sm: sidebarOpen ? '340px' : 0 },
+          transition: 'width 0.25s ease-in-out, margin 0.25s ease-in-out',
+          background: themeMode === 'dark' ? '#0F172A' : '#F0F2F5',
+          minHeight: '100vh',
+          boxSizing: 'border-box'
         }}
       >
         <Toolbar />
