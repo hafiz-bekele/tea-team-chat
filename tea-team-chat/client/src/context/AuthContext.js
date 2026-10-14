@@ -44,7 +44,7 @@ export const AuthProvider = ({ children }) => {
       const response = await axios.post('/api/auth/login', { email, password });
       localStorage.setItem('token', response.data.token);
       setUser(response.data);
-      toast.success(`Welcome back, ${response.data.username}! ☕`);
+      toast.success(`Welcome back, ${response.data.username}!`);
       return true;
     } catch (error) {
       toast.error(error.response?.data?.message || 'Login failed');
@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
       const response = await axios.post('/api/auth/register', userData);
       localStorage.setItem('token', response.data.token);
       setUser(response.data);
-      toast.success('Welcome to Tea Team Chat! ☕');
+      toast.success('Welcome to Tea Team Chat!');
       return true;
     } catch (error) {
       toast.error(error.response?.data?.message || 'Registration failed');
@@ -78,7 +78,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       localStorage.removeItem('token');
       setUser(null);
-      toast.success('See you later! ☕');
+      toast.success('Signed out successfully');
     }
   };
 

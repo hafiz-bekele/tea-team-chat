@@ -58,7 +58,7 @@ const INITIAL_SHORTS = [
     commentsCount: 28,
     soundTrack: 'Faculty Lecture Series Vol. 4',
     bgGradient: 'linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%)',
-    videoCodeSnippet: 'C[i][j] = sum(A[i][k] * B[k][j])\n// Strassen recursive submatrices\nM1 = (A11 + A22) * (B11 + B22)\nM2 = (A21 + A22) * B11\nComplexity reduced to O(n^2.807) ⚡',
+    videoCodeSnippet: 'C[i][j] = sum(A[i][k] * B[k][j])\n// Strassen recursive submatrices\nM1 = (A11 + A22) * (B11 + B22)\nM2 = (A21 + A22) * B11\nComplexity reduced to O(n^2.807) [Optimal]',
     comments: [
       { id: 'c1', user: 'Selamawit', role: 'student', text: 'Will this question appear in Monday midterm exam?' },
       { id: 'c2', user: 'Prof. Yohannes K.', role: 'teacher', text: 'Yes, Section 3 will include recursive master theorem calculation.' }

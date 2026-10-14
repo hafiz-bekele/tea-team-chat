@@ -22,6 +22,11 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Chip,
+  Stack,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -35,6 +40,16 @@ import {
   MoreVert as MoreVertIcon,
   Mic as MicIcon,
   VideoCall as VideoCallIcon,
+  School as SchoolIcon,
+  Person as PersonIcon,
+  Translate as LanguageIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
+  DynamicFeed as HubIcon,
+  FileDownload as DownloadIcon,
+  ArrowBack as ArrowBackIcon,
+  Verified as VerifiedIcon,
+  AccessTime as AccessTimeIcon,
 } from '@mui/icons-material';
 import EmojiPicker from 'emoji-picker-react';
 import { isSameDay } from 'date-fns';
@@ -50,11 +65,14 @@ import ReplyPreview from '../components/ReplyPreview';
 import FileUpload from '../components/FileUpload';
 import VoiceRecorder from '../components/VoiceRecorder';
 import VideoCall from '../components/VideoCall';
+import CampusHub from '../components/CampusHub';
+import ProfileEditModal from '../components/ProfileEditModal';
+import { translations } from '../utils/translations';
 
 const drawerWidth = 320;
 
 const EnhancedChat = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
   
@@ -76,6 +94,58 @@ const EnhancedChat = () => {
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [inVideoCall, setInVideoCall] = useState(false);
   const [callPeer, setCallPeer] = useState(null);
+
+  // Advanced University Hub & Localization State
+  const [lang, setLang] = useState(() => localStorage.getItem('tea_chat_lang') || 'en');
+  const [langAnchor, setLangAnchor] = useState(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [activeView, setActiveView] = useState('hub');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [themeMode, setThemeMode] = useState(() => localStorage.getItem('tea_chat_theme') || 'light');
+
+  const t = translations[lang] || translations.en;
+
+  const handleOpenLangMenu = (e) => setLangAnchor(e.currentTarget);
+  const handleCloseLangMenu = () => setLangAnchor(null);
+  const handleSelectLang = (selectedLang) => {
+    setLang(selectedLang);
+    localStorage.setItem('tea_chat_lang', selectedLang);
+    setLangAnchor(null);
+  };
+  const toggleTheme = () => {
+    const nextTheme = themeMode === 'light' ? 'dark' : 'light';
+    setThemeMode(nextTheme);
+    localStorage.setItem('tea_chat_theme', nextTheme);
+  };
+
+  const exportChatNotes = () => {
+    if (!messages || messages.length === 0) {
+      toast.error('No messages in this chat to export');
+      return;
+    }
+    const partnerName = selectedUser?.username || 'Peer';
+    let notes = `# Wollo University Study Notes & Lecture Discussion\n`;
+    notes += `Participants: ${user?.username || 'You'} & ${partnerName}\n`;
+    notes += `Export Date: ${new Date().toLocaleString()}\n`;
+    notes += `========================================================\n\n`;
+
+    messages.forEach(m => {
+      const time = new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const sender = m.sender?._id === user?._id ? (user?.username || 'You') : partnerName;
+      notes += `[${time}] ${sender}:\n${m.content || '[File / Audio Attachment]'}\n\n`;
+    });
+
+    const blob = new Blob([notes], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Study_Notes_${partnerName}_${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Study notes downloaded successfully');
+  };
   
   // Refs
   const messagesEndRef = useRef(null);
@@ -614,20 +684,47 @@ const EnhancedChat = () => {
   };
 
   // Sidebar drawer content
+  const filteredUsers = users.filter(u => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      u.username?.toLowerCase().includes(q) ||
+      u.department?.toLowerCase().includes(q) ||
+      u.role?.toLowerCase().includes(q)
+    );
+  });
+
   const drawer = (
-    <Box sx={{ height: '100%', background: '#FFF8E7' }}>
-      <Toolbar sx={{ background: '#F5A623', color: 'white' }}>
-        <LocalCafeIcon sx={{ mr: 1 }} />
-        <Typography variant="h6" noWrap sx={{ flexGrow: 1, fontWeight: 600 }}>
-          Tea Team Chat
-        </Typography>
+    <Box sx={{ height: '100%', background: '#FFF8E7', display: 'flex', flexDirection: 'column' }}>
+      <Toolbar sx={{ background: '#F5A623', color: 'white', display: 'flex', justifyContent: 'space-between', px: 2 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <LocalCafeIcon />
+          <Typography variant="h6" noWrap sx={{ fontWeight: 700 }}>
+            {t.appName}
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={0.5}>
+          <Tooltip title={t.language}>
+            <IconButton size="small" color="inherit" onClick={handleOpenLangMenu}>
+              <LanguageIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={themeMode === 'light' ? t.darkMode : t.lightMode}>
+            <IconButton size="small" color="inherit" onClick={toggleTheme}>
+              {themeMode === 'light' ? <DarkModeIcon fontSize="small" /> : <LightModeIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Toolbar>
       
-      <Box sx={{ p: 2 }}>
+      {/* Search Input */}
+      <Box sx={{ p: 2, pb: 1 }}>
         <TextField
           fullWidth
-          placeholder="Search users..."
+          placeholder={t.searchPlaceholder}
           size="small"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -644,44 +741,138 @@ const EnhancedChat = () => {
         />
       </Box>
 
-      <Typography sx={{ px: 2, py: 1, fontWeight: 600, color: '#6B4423' }}>
-        Chats
-      </Typography>
+      {/* Campus Hub Primary Button */}
+      <Box sx={{ px: 2, py: 1 }}>
+        <ListItem
+          button
+          onClick={() => {
+            setSelectedUser(null);
+            setActiveView('hub');
+          }}
+          sx={{
+            borderRadius: 2.5,
+            bgcolor: !selectedUser && activeView === 'hub' ? '#F5A623' : '#FFF',
+            color: !selectedUser && activeView === 'hub' ? '#fff' : '#0F172A',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+            border: '1px solid #E2E8F0',
+            '&:hover': {
+              bgcolor: !selectedUser && activeView === 'hub' ? '#E09212' : '#FFFBEB'
+            }
+          }}
+        >
+          <ListItemAvatar sx={{ minWidth: 42 }}>
+            <Avatar sx={{ width: 34, height: 34, bgcolor: !selectedUser && activeView === 'hub' ? '#fff' : '#F5A623', color: !selectedUser && activeView === 'hub' ? '#F5A623' : '#fff' }}>
+              <HubIcon fontSize="small" />
+            </Avatar>
+          </ListItemAvatar>
+          <ListItemText
+            primary={t.hubTitle}
+            secondary={`${t.feed} • ${t.shorts}`}
+            primaryTypographyProps={{ fontWeight: 700, fontSize: '0.9rem' }}
+            secondaryTypographyProps={{ sx: { fontSize: '0.75rem', color: !selectedUser && activeView === 'hub' ? 'rgba(255,255,255,0.85)' : '#64748B' } }}
+          />
+        </ListItem>
+      </Box>
 
-      <List sx={{ px: 1, overflowY: 'auto', height: 'calc(100vh - 250px)' }}>
-        {users.map((u) => (
-          <ListItem
-            key={u._id}
-            button
-            onClick={() => handleUserSelect(u)}
-            sx={{
-              borderRadius: 2,
-              mb: 0.5,
-              bgcolor: selectedUser?._id === u._id ? 'rgba(245, 166, 35, 0.2)' : 'transparent',
-              '&:hover': { bgcolor: 'rgba(245, 166, 35, 0.1)' },
-            }}
-          >
-            <ListItemAvatar>
-              <Badge
-                color={onlineUsers.has(u._id) ? 'success' : 'default'}
-                variant="dot"
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              >
-                <Avatar src={u.profilePicture} sx={{ bgcolor: '#F5A623' }}>
-                  {u.username[0].toUpperCase()}
-                </Avatar>
-              </Badge>
-            </ListItemAvatar>
-            <ListItemText
-              primary={u.username}
-              secondary={onlineUsers.has(u._id) ? 'Online' : 'Offline'}
-              primaryTypographyProps={{ fontWeight: 600 }}
-            />
-          </ListItem>
-        ))}
+      {/* Chats Section Header */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2, py: 1 }}>
+        <Typography sx={{ fontWeight: 700, color: '#6B4423', fontSize: '0.85rem' }}>
+          {t.chats} ({filteredUsers.length})
+        </Typography>
+        <Chip
+          size="small"
+          label="Students & Faculty"
+          sx={{ height: 18, fontSize: '0.62rem', bgcolor: 'rgba(245, 166, 35, 0.2)', color: '#8B6F47', fontWeight: 600 }}
+        />
+      </Stack>
+
+      {/* User / Contacts List */}
+      <List sx={{ px: 1, flex: 1, overflowY: 'auto' }}>
+        {filteredUsers.map((u) => {
+          const isUserTeacher = u.role === 'teacher';
+          const isUserTA = u.role === 'ta';
+          const isSelected = selectedUser?._id === u._id && activeView === 'chat';
+
+          return (
+            <ListItem
+              key={u._id}
+              button
+              onClick={() => {
+                handleUserSelect(u);
+                setActiveView('chat');
+              }}
+              sx={{
+                borderRadius: 2,
+                mb: 0.5,
+                bgcolor: isSelected ? 'rgba(245, 166, 35, 0.25)' : 'transparent',
+                '&:hover': { bgcolor: 'rgba(245, 166, 35, 0.12)' },
+              }}
+            >
+              <ListItemAvatar sx={{ minWidth: 46 }}>
+                <Badge
+                  color={onlineUsers.has(u._id) ? 'success' : 'default'}
+                  variant="dot"
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                >
+                  <Avatar
+                    src={u.profilePicture}
+                    sx={{
+                      bgcolor: isUserTeacher ? '#3B82F6' : isUserTA ? '#F59E0B' : '#10B981',
+                      width: 36,
+                      height: 36
+                    }}
+                  >
+                    {isUserTeacher ? <SchoolIcon fontSize="small" /> : (u.username[0] || '?').toUpperCase()}
+                  </Avatar>
+                </Badge>
+              </ListItemAvatar>
+              <ListItemText
+                primary={
+                  <Stack direction="row" spacing={0.8} alignItems="center">
+                    <Typography variant="body2" sx={{ fontWeight: 700, color: '#1E293B', fontSize: '0.88rem' }}>
+                      {u.username}
+                    </Typography>
+                    {isUserTeacher && <VerifiedIcon sx={{ fontSize: 14, color: '#3B82F6' }} />}
+                  </Stack>
+                }
+                secondary={
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.2 }}>
+                    <Typography variant="caption" sx={{ color: onlineUsers.has(u._id) ? '#10B981' : '#94A3B8', fontWeight: 600 }}>
+                      {onlineUsers.has(u._id) ? 'Online' : 'Offline'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748B', fontSize: '0.72rem' }}>
+                      {isUserTeacher ? t.roleTeacher : u.department || 'Student'}
+                    </Typography>
+                  </Stack>
+                }
+              />
+            </ListItem>
+          );
+        })}
       </List>
 
-      <Box sx={{ position: 'absolute', bottom: 0, width: '100%', p: 2 }}>
+      {/* Bottom Profile & Logout */}
+      <Box sx={{ p: 2, bgcolor: '#FFF8E7', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          sx={{ mb: 1.5, p: 1, borderRadius: 2, cursor: 'pointer', bgcolor: 'rgba(255,255,255,0.7)', '&:hover': { bgcolor: '#fff' } }}
+          onClick={() => setProfileModalOpen(true)}
+        >
+          <Avatar sx={{ bgcolor: user?.role === 'teacher' ? '#3B82F6' : '#F5A623', width: 34, height: 34 }}>
+            {user?.role === 'teacher' ? <SchoolIcon fontSize="small" /> : (user?.username?.[0] || 'U').toUpperCase()}
+          </Avatar>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, noWrap: true, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user?.username}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748B', display: 'block', fontSize: '0.7rem' }}>
+              {user?.role === 'teacher' ? t.roleTeacher : user?.department || 'Student'} • {t.editProfile}
+            </Typography>
+          </Box>
+        </Stack>
+
         <Button
           fullWidth
           variant="contained"
@@ -689,10 +880,13 @@ const EnhancedChat = () => {
           onClick={handleLogout}
           sx={{
             background: '#F5A623',
+            borderRadius: 2,
+            fontWeight: 700,
+            textTransform: 'none',
             '&:hover': { background: '#D4A574' }
           }}
         >
-          Log Out
+          {t.logOut}
         </Button>
       </Box>
     </Box>
@@ -707,6 +901,7 @@ const EnhancedChat = () => {
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
           background: '#F5A623',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.08)'
         }}
       >
         <Toolbar>
@@ -718,33 +913,81 @@ const EnhancedChat = () => {
           >
             <MenuIcon />
           </IconButton>
-          <Avatar src={selectedUser?.profilePicture} sx={{ mr: 2, bgcolor: 'white', color: '#F5A623' }}>
-            {selectedUser?.username?.[0]?.toUpperCase()}
-          </Avatar>
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="h6" noWrap>
-              {selectedUser ? selectedUser.username : 'Select a chat'}
-            </Typography>
-            {selectedUser && typingUsers.has(selectedUser._id) && (
-              <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                typing...
-              </Typography>
-            )}
-          </Box>
-          <IconButton color="inherit">
-            <SearchIcon />
-          </IconButton>
-          {selectedUser && (
-            <IconButton color="inherit" onClick={startVideoCall}>
-              <VideoCallIcon />
-            </IconButton>
+
+          {selectedUser && activeView === 'chat' ? (
+            <>
+              <Tooltip title="Back to Campus Hub">
+                <IconButton color="inherit" onClick={() => { setSelectedUser(null); setActiveView('hub'); }} sx={{ mr: 1 }}>
+                  <ArrowBackIcon />
+                </IconButton>
+              </Tooltip>
+              <Avatar src={selectedUser?.profilePicture} sx={{ mr: 1.5, bgcolor: 'white', color: '#F5A623' }}>
+                {selectedUser?.username?.[0]?.toUpperCase()}
+              </Avatar>
+              <Box sx={{ flexGrow: 1 }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="h6" noWrap sx={{ fontWeight: 700 }}>
+                    {selectedUser.username}
+                  </Typography>
+                  {selectedUser.role === 'teacher' && <VerifiedIcon sx={{ fontSize: 18, color: '#fff' }} />}
+                  <Chip
+                    size="small"
+                    label={selectedUser.role === 'teacher' ? t.roleTeacher : selectedUser.role === 'ta' ? t.roleTA : t.roleStudent}
+                    sx={{ bgcolor: 'rgba(255,255,255,0.25)', color: '#fff', height: 20, fontSize: '0.68rem', fontWeight: 700 }}
+                  />
+                </Stack>
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <AccessTimeIcon sx={{ fontSize: 13, opacity: 0.85 }} />
+                  <Typography variant="caption" sx={{ opacity: 0.9, display: 'block' }}>
+                    {typingUsers.has(selectedUser._id) ? 'typing...' : (selectedUser.officeHours || selectedUser.department || 'Active')}
+                  </Typography>
+                </Stack>
+              </Box>
+              <Tooltip title={t.exportChat}>
+                <IconButton color="inherit" onClick={exportChatNotes}>
+                  <DownloadIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.videoLounge}>
+                <IconButton color="inherit" onClick={startVideoCall}>
+                  <VideoCallIcon />
+                </IconButton>
+              </Tooltip>
+            </>
+          ) : (
+            <>
+              <SchoolIcon sx={{ mr: 1.5 }} />
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="h6" noWrap sx={{ fontWeight: 800 }}>
+                  {t.appName}
+                </Typography>
+                <Typography variant="caption" sx={{ opacity: 0.9, display: 'block' }}>
+                  {t.hubTitle} • Wollo University
+                </Typography>
+              </Box>
+            </>
           )}
-          <IconButton color="inherit" onClick={() => navigate('/profile')}>
-            <SettingsIcon />
-          </IconButton>
-          <IconButton color="inherit">
-            <MoreVertIcon />
-          </IconButton>
+
+          {/* Language Switcher */}
+          <Tooltip title={t.language}>
+            <IconButton color="inherit" onClick={handleOpenLangMenu} sx={{ ml: 1 }}>
+              <LanguageIcon />
+            </IconButton>
+          </Tooltip>
+
+          {/* Profile Edit Trigger */}
+          <Tooltip title={t.editProfile}>
+            <IconButton color="inherit" onClick={() => setProfileModalOpen(true)}>
+              <PersonIcon />
+            </IconButton>
+          </Tooltip>
+
+          {/* Theme Toggle */}
+          <Tooltip title={themeMode === 'light' ? t.darkMode : t.lightMode}>
+            <IconButton color="inherit" onClick={toggleTheme}>
+              {themeMode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 
@@ -911,20 +1154,19 @@ const EnhancedChat = () => {
             )}
           </Box>
         ) : (
-          <Box
-            sx={{
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: 'center',
+          <CampusHub
+            user={user}
+            onOpenProfile={() => setProfileModalOpen(true)}
+            onDirectMessage={(targetUser) => {
+              handleUserSelect(targetUser);
+              setActiveView('chat');
             }}
-          >
-            <LocalCafeIcon sx={{ fontSize: 100, color: '#F5A623', mb: 2 }} />
-            <Typography variant="h5" sx={{ color: '#6B4423', fontWeight: 600 }}>
-              Select a friend to start chatting ☕
-            </Typography>
-          </Box>
+            onStartVideoCall={(pod) => {
+              setInVideoCall(true);
+              setCallPeer({ username: pod.name || 'Study Pod' });
+            }}
+            lang={lang}
+          />
         )}
       </Box>
 
@@ -943,7 +1185,7 @@ const EnhancedChat = () => {
         onCopy={handleCopy}
         onReact={() => {
           if (selectedMessage) {
-            addReaction(selectedMessage._id, '❤️');
+            addReaction(selectedMessage._id, 'starred');
           }
           handleCloseContextMenu();
         }}
@@ -988,6 +1230,33 @@ const EnhancedChat = () => {
           onEndCall={endVideoCall}
         />
       )}
+
+      {/* Profile Edit Modal */}
+      <ProfileEditModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        user={user}
+        onProfileUpdated={(updated) => setUser(updated)}
+        lang={lang}
+      />
+
+      {/* Language Selector Menu */}
+      <Menu
+        anchorEl={langAnchor}
+        open={Boolean(langAnchor)}
+        onClose={handleCloseLangMenu}
+        PaperProps={{ sx: { borderRadius: 2, minWidth: 160 } }}
+      >
+        <MenuItem onClick={() => handleSelectLang('en')} selected={lang === 'en'}>
+          English
+        </MenuItem>
+        <MenuItem onClick={() => handleSelectLang('am')} selected={lang === 'am'}>
+          አማርኛ (Amharic)
+        </MenuItem>
+        <MenuItem onClick={() => handleSelectLang('om')} selected={lang === 'om'}>
+          Afaan Oromoo (Oromo)
+        </MenuItem>
+      </Menu>
     </Box>
   );
 };
