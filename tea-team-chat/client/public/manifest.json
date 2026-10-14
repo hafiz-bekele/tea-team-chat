@@ -1,0 +1,18 @@
+{
+  "short_name": "Tea Team",
+  "name": "Tea Team Chat - Wollo University",
+  "description": "Where Campus Conversations Spill the Real Tea. Connect, study, and collaborate with Wollo University students.",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#F5A623",
+  "background_color": "#FFF8E7",
+  "orientation": "portrait-primary",
+  "categories": ["social", "education", "productivity"]
+}
