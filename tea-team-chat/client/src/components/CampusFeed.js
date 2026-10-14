@@ -22,7 +22,10 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  Menu,
+  Tooltip,
+  Grid
 } from '@mui/material';
 import {
   School as SchoolIcon,
@@ -43,10 +46,18 @@ import {
   Verified as VerifiedIcon,
   AccessTime as AccessTimeIcon,
   Chat as MessageUserIcon,
-  Add as AddIcon
+  Add as AddIcon,
+  PhotoLibrary as PhotoIcon,
+  Public as PublicIcon,
+  MoreHoriz as MoreHorizIcon,
+  Lightbulb as LightbulbIcon,
+  Event as EventIcon,
+  NotificationsActive as AlertIcon,
+  Check as CheckIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import CampusStories from './CampusStories';
 import { translations } from '../utils/translations';
 
 // Default initial campus posts if server is starting or empty
@@ -68,20 +79,23 @@ const FALLBACK_POSTS = [
     department: 'Computer Science',
     createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
     likes: ['user-10', 'user-11', 'user-12'],
+    reactionCounts: { like: 14, helpful: 8, support: 5 },
     comments: [
       {
         _id: 'comm-1',
         username: 'Selamawit T.',
         role: 'student',
         text: 'Will the exam cover Raft consensus or only Paxos?',
-        createdAt: new Date(Date.now() - 3600000).toISOString()
+        createdAt: new Date(Date.now() - 3600000).toISOString(),
+        likesCount: 3
       },
       {
         _id: 'comm-2',
         username: 'Prof. Yohannes K.',
         role: 'teacher',
         text: 'Both will be covered, with emphasis on practical leader election in Raft.',
-        createdAt: new Date(Date.now() - 1800000).toISOString()
+        createdAt: new Date(Date.now() - 1800000).toISOString(),
+        likesCount: 6
       }
     ],
     poll: {
@@ -109,13 +123,15 @@ const FALLBACK_POSTS = [
     department: 'Computer Science',
     createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
     likes: ['user-1', 'user-2'],
+    reactionCounts: { like: 6, helpful: 4, support: 2 },
     comments: [
       {
         _id: 'comm-3',
         username: 'Abebe T. (TA)',
         role: 'ta',
         text: 'If h(n) violates the triangle inequality (h(n) <= c(n,a,n\') + h(n\')), the first path found to a state is no longer guaranteed to be the shortest.',
-        createdAt: new Date(Date.now() - 3600000 * 3).toISOString()
+        createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+        likesCount: 5
       }
     ]
   },
@@ -136,8 +152,16 @@ const FALLBACK_POSTS = [
     department: 'Electrical Engineering',
     createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
     likes: ['user-3', 'user-4', 'user-5', 'user-6', 'user-7'],
+    reactionCounts: { like: 19, helpful: 11, support: 7 },
     comments: []
   }
+];
+
+const ONLINE_FACULTY_CONTACTS = [
+  { id: 'f-1', name: 'Prof. Yohannes K.', role: 'teacher', dept: 'Computer Science', office: 'Tech Block B-204', online: true },
+  { id: 'f-2', name: 'Dr. Rahel Mengistu', role: 'teacher', dept: 'Electrical Eng.', office: 'EE Lab 4', online: true },
+  { id: 'f-3', name: 'Abebe T. (TA)', role: 'ta', dept: 'Computer Science', office: 'Available online', online: true },
+  { id: 's-1', name: 'Selamawit T.', role: 'student', dept: 'Software Eng.', office: 'Main Library 3rd Floor', online: true }
 ];
 
 const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
@@ -147,14 +171,19 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
   const [activeTab, setActiveTab] = useState('all');
   const [composerOpen, setComposerOpen] = useState(false);
   const [bookmarkedPosts, setBookmarkedPosts] = useState({});
+  const [userReactions, setUserReactions] = useState({});
+  const [hoveredPostId, setHoveredPostId] = useState(null);
   const [openCommentPostId, setOpenCommentPostId] = useState(null);
   const [commentInput, setCommentInput] = useState('');
+  const [postMenuAnchor, setPostMenuAnchor] = useState(null);
+  const [selectedPostForMenu, setSelectedPostForMenu] = useState(null);
 
   // New Post Form
   const [formData, setFormData] = useState({
     title: '',
     content: '',
     category: 'general',
+    audience: 'public',
     includePoll: false,
     pollQuestion: '',
     pollOptions: ['', '']
@@ -181,7 +210,7 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
         setPosts(res.data);
       }
     } catch (error) {
-      // Keep fallback posts if server endpoint is initializing
+      // Keep fallback posts if endpoint is initializing
     }
   };
 
@@ -213,17 +242,10 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
 
       setPosts(prev => [res.data, ...prev]);
       setComposerOpen(false);
-      setFormData({
-        title: '',
-        content: '',
-        category: 'general',
-        includePoll: false,
-        pollQuestion: '',
-        pollOptions: ['', '']
-      });
-      toast.success('Campus post published');
+      resetFormData();
+      toast.success('Campus post published to feed');
     } catch (error) {
-      // Offline fallback post
+      // Local fallback
       const localPost = {
         _id: `post-${Date.now()}`,
         title: formData.title,
@@ -241,35 +263,61 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
         department: user?.department || 'Computer Science',
         createdAt: new Date().toISOString(),
         likes: [],
+        reactionCounts: { like: 1, helpful: 0, support: 0 },
         comments: []
       };
       setPosts(prev => [localPost, ...prev]);
       setComposerOpen(false);
-      toast.success('Campus post published');
+      resetFormData();
+      toast.success('Campus post published to feed');
     }
   };
 
-  const handleToggleLike = async (postId) => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`/api/posts/${postId}/like`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-    } catch (e) {
-      // Local state update
-    }
+  const resetFormData = () => {
+    setFormData({
+      title: '',
+      content: '',
+      category: 'general',
+      audience: 'public',
+      includePoll: false,
+      pollQuestion: '',
+      pollOptions: ['', '']
+    });
+  };
+
+  // Facebook Multi-Reaction Handler
+  const handleReact = (postId, reactionType) => {
+    const currentReaction = userReactions[postId];
+    const isSame = currentReaction === reactionType;
+
+    setUserReactions(prev => ({
+      ...prev,
+      [postId]: isSame ? null : reactionType
+    }));
 
     setPosts(prev => prev.map(p => {
       if (p._id === postId) {
-        const userId = user?._id || 'my-id';
-        const hasLiked = (p.likes || []).includes(userId);
-        const newLikes = hasLiked
-          ? (p.likes || []).filter(id => id !== userId)
-          : [...(p.likes || []), userId];
-        return { ...p, likes: newLikes };
+        const counts = p.reactionCounts || { like: p.likes?.length || 0, helpful: 0, support: 0 };
+        const updatedCounts = { ...counts };
+
+        if (currentReaction && updatedCounts[currentReaction] > 0) {
+          updatedCounts[currentReaction] -= 1;
+        }
+
+        if (!isSame) {
+          updatedCounts[reactionType] = (updatedCounts[reactionType] || 0) + 1;
+        }
+
+        return {
+          ...p,
+          reactionCounts: updatedCounts,
+          likes: !isSame ? [...(p.likes || []), user?._id || 'my-id'] : (p.likes || []).filter(id => id !== (user?._id || 'my-id'))
+        };
       }
       return p;
     }));
+
+    setHoveredPostId(null);
   };
 
   const handleAddComment = async (postId) => {
@@ -280,7 +328,8 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
       username: user?.username || 'You',
       role: user?.role || 'student',
       text: commentInput.trim(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      likesCount: 0
     };
 
     try {
@@ -289,7 +338,7 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch (e) {
-      // Local state update
+      // Local fallback
     }
 
     setPosts(prev => prev.map(p => {
@@ -312,7 +361,7 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch (e) {
-      // Local state update
+      // Local fallback
     }
 
     setPosts(prev => prev.map(p => {
@@ -338,14 +387,14 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
   const toggleBookmark = (postId) => {
     setBookmarkedPosts(prev => {
       const newState = !prev[postId];
-      toast.success(newState ? 'Post bookmarked' : 'Bookmark removed');
+      toast.success(newState ? 'Saved to Bookmarks' : 'Removed from Bookmarks');
       return { ...prev, [postId]: newState };
     });
   };
 
   const handleShare = () => {
     navigator.clipboard?.writeText(window.location.href);
-    toast.success('Link copied to clipboard');
+    toast.success('Post link copied to clipboard');
   };
 
   const getCategoryIcon = (category) => {
@@ -361,363 +410,703 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
     }
   };
 
-  return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#F8FAFC', overflowY: 'auto' }}>
-      {/* Top Banner & Composer Trigger */}
-      <Box sx={{
-        p: { xs: 2, md: 3 },
-        bgcolor: '#FFFFFF',
-        borderBottom: '1px solid #E2E8F0',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-      }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} sx={{ mb: 2 }}>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: '#0F172A', letterSpacing: -0.5 }}>
-              {t.feed}
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#64748B' }}>
-              Wollo University Academic Exchange & Announcements
-            </Typography>
-          </Box>
+  const getReactionIcon = (reactionType) => {
+    switch (reactionType) {
+      case 'helpful':
+        return <LightbulbIcon sx={{ fontSize: 18, color: '#F59E0B' }} />;
+      case 'support':
+        return <SchoolIcon sx={{ fontSize: 18, color: '#10B981' }} />;
+      case 'bookmark':
+        return <BookmarkIcon sx={{ fontSize: 18, color: '#8B5CF6' }} />;
+      default:
+        return <ThumbUpIcon sx={{ fontSize: 18, color: '#1877F2' }} />;
+    }
+  };
 
-          <Button
-            variant="contained"
-            startIcon={<PostAddIcon />}
-            onClick={() => setComposerOpen(true)}
+  return (
+    <Box sx={{ height: '100%', bgcolor: '#F0F2F5', overflowY: 'auto', p: { xs: 1.5, md: 3 } }}>
+      <Grid container spacing={3} sx={{ maxWidth: 1200, mx: 'auto' }}>
+        
+        {/* Center Main Feed Column (Facebook News Feed) */}
+        <Grid item xs={12} md={8}>
+          
+          {/* Facebook Stories Carousel */}
+          <CampusStories user={user} lang={lang} />
+
+          {/* Facebook-style "What's on your mind?" Composer Box */}
+          <Paper
+            elevation={0}
             sx={{
-              bgcolor: '#F5A623',
-              color: '#fff',
-              fontWeight: 700,
-              textTransform: 'none',
-              borderRadius: 2.5,
-              px: 2.5,
-              py: 1,
-              boxShadow: '0 4px 14px rgba(245, 166, 35, 0.3)',
-              '&:hover': { bgcolor: '#E09212' }
+              p: 2,
+              mb: 2.5,
+              borderRadius: 3,
+              bgcolor: '#FFFFFF',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+              border: '1px solid #E4E6EB'
             }}
           >
-            {t.postSomething}
-          </Button>
-        </Stack>
-
-        {/* Filter Tabs */}
-        <Tabs
-          value={activeTab}
-          onChange={(e, val) => setActiveTab(val)}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{
-            minHeight: 40,
-            '& .MuiTab-root': {
-              textTransform: 'none',
-              fontWeight: 600,
-              fontSize: '0.9rem',
-              minHeight: 40,
-              color: '#64748B',
-              '&.Mui-selected': { color: '#F5A623' }
-            },
-            '& .MuiTabs-indicator': { bgcolor: '#F5A623', height: 3, borderRadius: '3px 3px 0 0' }
-          }}
-        >
-          <Tab value="all" label={t.allPosts} />
-          <Tab value="teachers" label={t.teachersOnly} />
-          <Tab value="questions" label={t.questions} />
-          <Tab value="announcements" label={t.announcement} />
-        </Tabs>
-      </Box>
-
-      {/* Posts Feed List */}
-      <Box sx={{ maxWidth: 840, mx: 'auto', width: '100%', p: { xs: 2, md: 3 } }}>
-        <Stack spacing={2.5}>
-          {posts.map((post) => {
-            const isAuthorTeacher = post.role === 'teacher' || post.author?.role === 'teacher';
-            const isAuthorTA = post.role === 'ta' || post.author?.role === 'ta';
-            const hasLiked = (post.likes || []).includes(user?._id || 'my-id');
-            const isBookmarked = bookmarkedPosts[post._id];
-            const commentsList = post.comments || [];
-            const isCommentsOpen = openCommentPostId === post._id;
-
-            // Poll calculation
-            const totalPollVotes = post.poll?.options
-              ? post.poll.options.reduce((sum, opt) => sum + (opt.votes?.length || 0), 0)
-              : 0;
-
-            return (
-              <Card
-                key={post._id}
-                elevation={0}
+            {/* Top row: Avatar + Pill Input */}
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ pb: 1.5 }}>
+              <Avatar
                 sx={{
-                  borderRadius: 3,
-                  border: isAuthorTeacher ? '1.5px solid #BFDBFE' : '1px solid #E2E8F0',
-                  boxShadow: isAuthorTeacher ? '0 4px 16px rgba(59, 130, 246, 0.08)' : '0 2px 8px rgba(0,0,0,0.03)',
-                  transition: 'transform 0.15s, box-shadow 0.15s',
-                  '&:hover': { boxShadow: '0 6px 20px rgba(0,0,0,0.06)' }
+                  bgcolor: user?.role === 'teacher' ? '#3B82F6' : '#F5A623',
+                  width: 42,
+                  height: 42
                 }}
               >
-                <CardContent sx={{ p: 2.5 }}>
-                  {/* Author Header */}
-                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.8 }}>
-                    <Stack direction="row" spacing={1.5} alignItems="center">
-                      <Avatar sx={{
-                        bgcolor: isAuthorTeacher ? '#3B82F6' : isAuthorTA ? '#F59E0B' : '#10B981',
-                        width: 44,
-                        height: 44
-                      }}>
-                        {isAuthorTeacher ? <SchoolIcon /> : <PersonIcon />}
-                      </Avatar>
-                      <Box>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            {post.author?.username || post.authorName || 'Campus Member'}
+                {user?.role === 'teacher' ? <SchoolIcon /> : <PersonIcon />}
+              </Avatar>
+              <Box
+                onClick={() => setComposerOpen(true)}
+                sx={{
+                  flex: 1,
+                  bgcolor: '#F0F2F5',
+                  py: 1.2,
+                  px: 2,
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s',
+                  '&:hover': { bgcolor: '#E4E6E9' }
+                }}
+              >
+                <Typography variant="body2" sx={{ color: '#65676B', fontWeight: 500 }}>
+                  What's on your mind, {user?.username || 'Scholar'}?
+                </Typography>
+              </Box>
+            </Stack>
+
+            <Divider sx={{ my: 0.5 }} />
+
+            {/* Bottom Facebook Action Buttons */}
+            <Stack direction="row" justifyContent="space-around" sx={{ pt: 1 }}>
+              <Button
+                startIcon={<PhotoIcon sx={{ color: '#45BD62 !important' }} />}
+                onClick={() => setComposerOpen(true)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  color: '#65676B',
+                  flex: 1,
+                  borderRadius: 2,
+                  '&:hover': { bgcolor: '#F2F2F2' }
+                }}
+              >
+                Photo / Slide
+              </Button>
+              <Button
+                startIcon={<PollIcon sx={{ color: '#1877F2 !important' }} />}
+                onClick={() => {
+                  setFormData(prev => ({ ...prev, includePoll: true }));
+                  setComposerOpen(true);
+                }}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  color: '#65676B',
+                  flex: 1,
+                  borderRadius: 2,
+                  '&:hover': { bgcolor: '#F2F2F2' }
+                }}
+              >
+                Campus Poll
+              </Button>
+              <Button
+                startIcon={<AnnouncementIcon sx={{ color: '#F3425F !important' }} />}
+                onClick={() => {
+                  setFormData(prev => ({ ...prev, category: 'announcement' }));
+                  setComposerOpen(true);
+                }}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  color: '#65676B',
+                  flex: 1,
+                  borderRadius: 2,
+                  '&:hover': { bgcolor: '#F2F2F2' }
+                }}
+              >
+                Announcement
+              </Button>
+            </Stack>
+          </Paper>
+
+          {/* Filter Tabs */}
+          <Paper
+            elevation={0}
+            sx={{
+              mb: 2.5,
+              borderRadius: 2.5,
+              bgcolor: '#FFFFFF',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+              border: '1px solid #E4E6EB'
+            }}
+          >
+            <Tabs
+              value={activeTab}
+              onChange={(e, val) => setActiveTab(val)}
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{
+                minHeight: 44,
+                px: 1,
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  minHeight: 44,
+                  color: '#65676B',
+                  '&.Mui-selected': { color: '#1877F2' }
+                },
+                '& .MuiTabs-indicator': { bgcolor: '#1877F2', height: 3 }
+              }}
+            >
+              <Tab value="all" label={t.allPosts} />
+              <Tab value="teachers" label={t.teachersOnly} />
+              <Tab value="questions" label={t.questions} />
+              <Tab value="announcements" label={t.announcement} />
+            </Tabs>
+          </Paper>
+
+          {/* Facebook Post Cards */}
+          <Stack spacing={2.5}>
+            {posts.map((post) => {
+              const isAuthorTeacher = post.role === 'teacher' || post.author?.role === 'teacher';
+              const isAuthorTA = post.role === 'ta' || post.author?.role === 'ta';
+              const activeReaction = userReactions[post._id];
+              const isBookmarked = bookmarkedPosts[post._id];
+              const commentsList = post.comments || [];
+              const isCommentsOpen = openCommentPostId === post._id;
+
+              const reactionTotals = post.reactionCounts || {
+                like: post.likes?.length || 0,
+                helpful: 0,
+                support: 0
+              };
+              const totalReactions = Object.values(reactionTotals).reduce((a, b) => a + b, 0);
+
+              const totalPollVotes = post.poll?.options
+                ? post.poll.options.reduce((sum, opt) => sum + (opt.votes?.length || 0), 0)
+                : 0;
+
+              return (
+                <Card
+                  key={post._id}
+                  elevation={0}
+                  sx={{
+                    borderRadius: 3,
+                    bgcolor: '#FFFFFF',
+                    border: '1px solid #E4E6EB',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    position: 'relative'
+                  }}
+                >
+                  <CardContent sx={{ p: 2.5 }}>
+                    {/* Post Header: Avatar, Name, Role, Timestamp, Privacy, Options */}
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <Avatar
+                          sx={{
+                            bgcolor: isAuthorTeacher ? '#1877F2' : isAuthorTA ? '#F59E0B' : '#10B981',
+                            width: 44,
+                            height: 44,
+                            border: isAuthorTeacher ? '2px solid #1877F2' : 'none'
+                          }}
+                        >
+                          {isAuthorTeacher ? <SchoolIcon /> : <PersonIcon />}
+                        </Avatar>
+                        <Box>
+                          <Stack direction="row" spacing={0.8} alignItems="center">
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#050505', fontSize: '0.98rem' }}>
+                              {post.author?.username || post.authorName || 'Campus Member'}
+                            </Typography>
                             {(isAuthorTeacher || post.author?.isVerified) && (
-                              <VerifiedIcon sx={{ fontSize: 16, color: '#3B82F6' }} />
+                              <VerifiedIcon sx={{ fontSize: 16, color: '#1877F2' }} />
                             )}
+                            <Chip
+                              size="small"
+                              label={isAuthorTeacher ? t.roleTeacher : isAuthorTA ? t.roleTA : t.roleStudent}
+                              sx={{
+                                height: 20,
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                bgcolor: isAuthorTeacher ? '#E7F3FF' : isAuthorTA ? '#FEF3C7' : '#DEF7EC',
+                                color: isAuthorTeacher ? '#1877F2' : isAuthorTA ? '#D97706' : '#047857'
+                              }}
+                            />
+                          </Stack>
+
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.2 }}>
+                            <Typography variant="caption" sx={{ color: '#65676B', fontWeight: 500 }}>
+                              {post.department || post.author?.department || 'Wollo University'}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#65676B' }}>•</Typography>
+                            <Stack direction="row" spacing={0.4} alignItems="center">
+                              <PublicIcon sx={{ fontSize: 12, color: '#65676B' }} />
+                              <Typography variant="caption" sx={{ color: '#65676B' }}>
+                                Campus Public
+                              </Typography>
+                            </Stack>
+                            {post.author?.officeHours && (
+                              <>
+                                <Typography variant="caption" sx={{ color: '#65676B' }}>•</Typography>
+                                <Typography variant="caption" sx={{ color: '#1877F2', fontWeight: 600 }}>
+                                  {post.author.officeHours}
+                                </Typography>
+                              </>
+                            )}
+                          </Stack>
+                        </Box>
+                      </Stack>
+
+                      {/* Right Post Options */}
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <Chip
+                          icon={getCategoryIcon(post.category)}
+                          label={post.category === 'announcement' ? t.announcement : post.category === 'studyQuestion' ? t.studyQuestion : post.category === 'courseMaterial' ? t.courseMaterial : t.general}
+                          size="small"
+                          sx={{ bgcolor: '#F0F2F5', fontWeight: 600, fontSize: '0.75rem' }}
+                        />
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            setPostMenuAnchor(e.currentTarget);
+                            setSelectedPostForMenu(post);
+                          }}
+                        >
+                          <MoreHorizIcon sx={{ color: '#65676B' }} />
+                        </IconButton>
+                      </Stack>
+                    </Stack>
+
+                    {/* Post Title & Content */}
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: '#050505', mb: 1, fontSize: '1.05rem' }}>
+                      {post.title}
+                    </Typography>
+
+                    <Typography variant="body1" sx={{ color: '#050505', lineHeight: 1.6, whiteSpace: 'pre-line', mb: 2 }}>
+                      {post.content}
+                    </Typography>
+
+                    {/* Attached Poll if present */}
+                    {post.poll && post.poll.options && (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          p: 2,
+                          mb: 2,
+                          borderRadius: 2.5,
+                          bgcolor: '#F7F8FA',
+                          borderColor: '#E4E6EB'
+                        }}
+                      >
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                          <PollIcon fontSize="small" sx={{ color: '#1877F2' }} />
+                          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#050505' }}>
+                            {post.poll.question || t.pollTitle}
                           </Typography>
                           <Chip
                             size="small"
-                            label={isAuthorTeacher ? t.roleTeacher : isAuthorTA ? t.roleTA : t.roleStudent}
-                            sx={{
-                              height: 22,
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              bgcolor: isAuthorTeacher ? '#EFF6FF' : isAuthorTA ? '#FFFBEB' : '#ECFDF5',
-                              color: isAuthorTeacher ? '#1D4ED8' : isAuthorTA ? '#B45309' : '#047857',
-                              border: isAuthorTeacher ? '1px solid #BFDBFE' : '1px solid #A7F3D0'
-                            }}
+                            label={`${totalPollVotes} votes`}
+                            sx={{ height: 20, fontSize: '0.68rem', bgcolor: '#E4E6EB', fontWeight: 600 }}
                           />
                         </Stack>
 
-                        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mt: 0.3 }}>
-                          <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 500 }}>
-                            {post.department || post.author?.department || 'Wollo University'}
-                          </Typography>
-                          {post.author?.officeHours && (
-                            <Stack direction="row" spacing={0.5} alignItems="center">
-                              <AccessTimeIcon sx={{ fontSize: 13, color: '#94A3B8' }} />
-                              <Typography variant="caption" sx={{ color: '#94A3B8' }}>
-                                {post.author.officeHours}
-                              </Typography>
-                            </Stack>
-                          )}
+                        <Stack spacing={1.2}>
+                          {post.poll.options.map((opt, idx) => {
+                            const votesCount = opt.votes?.length || 0;
+                            const percentage = totalPollVotes > 0 ? Math.round((votesCount / totalPollVotes) * 100) : 0;
+                            const hasVotedThis = (opt.votes || []).includes(user?._id || 'my-vote');
+
+                            return (
+                              <Box
+                                key={idx}
+                                onClick={() => handleVotePoll(post._id, idx)}
+                                sx={{
+                                  p: 1.2,
+                                  borderRadius: 2,
+                                  cursor: 'pointer',
+                                  border: hasVotedThis ? '1.5px solid #1877F2' : '1px solid #CCD0D5',
+                                  bgcolor: hasVotedThis ? '#E7F3FF' : '#FFFFFF',
+                                  transition: 'all 0.15s',
+                                  '&:hover': { borderColor: '#1877F2', bgcolor: '#F0F2F5' }
+                                }}
+                              >
+                                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: hasVotedThis ? 700 : 500, color: '#050505' }}>
+                                    {opt.text}
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#65676B' }}>
+                                    {percentage}% ({votesCount})
+                                  </Typography>
+                                </Stack>
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={percentage}
+                                  sx={{
+                                    height: 6,
+                                    borderRadius: 3,
+                                    bgcolor: '#E4E6EB',
+                                    '& .MuiLinearProgress-bar': { bgcolor: hasVotedThis ? '#1877F2' : '#8A8D91' }
+                                  }}
+                                />
+                              </Box>
+                            );
+                          })}
                         </Stack>
-                      </Box>
-                    </Stack>
+                      </Paper>
+                    )}
 
-                    {/* Category Chip & Direct Chat Button */}
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip
-                        icon={getCategoryIcon(post.category)}
-                        label={post.category === 'announcement' ? t.announcement : post.category === 'studyQuestion' ? t.studyQuestion : post.category === 'courseMaterial' ? t.courseMaterial : t.general}
-                        size="small"
-                        sx={{ bgcolor: '#F1F5F9', fontWeight: 600, fontSize: '0.75rem' }}
-                      />
-                      {onDirectMessage && post.author?._id !== user?._id && (
-                        <IconButton
-                          size="small"
-                          onClick={() => onDirectMessage(post.author)}
-                          title="Message this person directly"
-                          sx={{ color: '#64748B', '&:hover': { color: '#F5A623', bgcolor: '#FFFBEB' } }}
-                        >
-                          <MessageUserIcon fontSize="small" />
-                        </IconButton>
-                      )}
-                    </Stack>
-                  </Stack>
-
-                  {/* Post Title & Content */}
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#1E293B', mb: 1, fontSize: '1.05rem' }}>
-                    {post.title}
-                  </Typography>
-
-                  <Typography variant="body1" sx={{ color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-line', mb: 2 }}>
-                    {post.content}
-                  </Typography>
-
-                  {/* Campus Poll Widget if attached */}
-                  {post.poll && post.poll.options && (
-                    <Paper
-                      variant="outlined"
-                      sx={{
-                        p: 2,
-                        mb: 2,
-                        borderRadius: 2.5,
-                        bgcolor: '#F8FAFC',
-                        borderColor: '#E2E8F0'
-                      }}
-                    >
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                        <PollIcon fontSize="small" sx={{ color: '#F5A623' }} />
-                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#0F172A' }}>
-                          {post.poll.question || t.pollTitle}
+                    {/* Facebook Reactions & Comments Stats Bar */}
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ py: 1 }}>
+                      <Stack direction="row" spacing={0.6} alignItems="center">
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: '#1877F2', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <ThumbUpIcon sx={{ fontSize: 12 }} />
+                          </Box>
+                          <Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: '#F59E0B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', ml: -0.6 }}>
+                            <LightbulbIcon sx={{ fontSize: 12 }} />
+                          </Box>
+                        </Box>
+                        <Typography variant="caption" sx={{ color: '#65676B', fontWeight: 600 }}>
+                          {totalReactions > 0 ? totalReactions : 1}
                         </Typography>
-                        <Chip
-                          size="small"
-                          label={`${totalPollVotes} votes`}
-                          sx={{ height: 20, fontSize: '0.68rem', bgcolor: '#E2E8F0', fontWeight: 600 }}
-                        />
                       </Stack>
 
-                      <Stack spacing={1.2}>
-                        {post.poll.options.map((opt, idx) => {
-                          const votesCount = opt.votes?.length || 0;
-                          const percentage = totalPollVotes > 0 ? Math.round((votesCount / totalPollVotes) * 100) : 0;
-                          const hasVotedThis = (opt.votes || []).includes(user?._id || 'my-vote');
-
-                          return (
-                            <Box
-                              key={idx}
-                              onClick={() => handleVotePoll(post._id, idx)}
-                              sx={{
-                                p: 1.2,
-                                borderRadius: 2,
-                                cursor: 'pointer',
-                                border: hasVotedThis ? '1.5px solid #F5A623' : '1px solid #CBD5E1',
-                                bgcolor: hasVotedThis ? '#FFFBEB' : '#FFFFFF',
-                                transition: 'all 0.15s',
-                                '&:hover': { borderColor: '#F5A623', bgcolor: '#FFFBEB' }
-                              }}
-                            >
-                              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
-                                <Typography variant="body2" sx={{ fontWeight: hasVotedThis ? 700 : 500, color: '#1E293B' }}>
-                                  {opt.text}
-                                </Typography>
-                                <Typography variant="caption" sx={{ fontWeight: 700, color: '#64748B' }}>
-                                  {percentage}% ({votesCount})
-                                </Typography>
-                              </Stack>
-                              <LinearProgress
-                                variant="determinate"
-                                value={percentage}
-                                sx={{
-                                  height: 6,
-                                  borderRadius: 3,
-                                  bgcolor: '#E2E8F0',
-                                  '& .MuiLinearProgress-bar': { bgcolor: hasVotedThis ? '#F5A623' : '#94A3B8' }
-                                }}
-                              />
-                            </Box>
-                          );
-                        })}
-                      </Stack>
-                    </Paper>
-                  )}
-
-                  <Divider sx={{ my: 1.5 }} />
-
-                  {/* Actions Row */}
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Stack direction="row" spacing={1}>
-                      {/* Like */}
-                      <Button
-                        size="small"
-                        startIcon={hasLiked ? <ThumbUpIcon /> : <ThumbUpOutlinedIcon />}
-                        onClick={() => handleToggleLike(post._id)}
-                        sx={{
-                          color: hasLiked ? '#F5A623' : '#64748B',
-                          fontWeight: 600,
-                          textTransform: 'none',
-                          borderRadius: 2,
-                          '&:hover': { bgcolor: '#FFFBEB' }
-                        }}
-                      >
-                        {post.likes?.length || 0} {t.like}
-                      </Button>
-
-                      {/* Comment */}
-                      <Button
-                        size="small"
-                        startIcon={<CommentIcon />}
-                        onClick={() => setOpenCommentPostId(isCommentsOpen ? null : post._id)}
-                        sx={{
-                          color: '#64748B',
-                          fontWeight: 600,
-                          textTransform: 'none',
-                          borderRadius: 2,
-                          '&:hover': { bgcolor: '#F1F5F9' }
-                        }}
-                      >
-                        {commentsList.length} {t.comment}
-                      </Button>
+                      <Typography variant="caption" sx={{ color: '#65676B' }}>
+                        {commentsList.length} comments • 2 shares
+                      </Typography>
                     </Stack>
 
-                    <Stack direction="row" spacing={0.5}>
-                      {/* Bookmark */}
-                      <IconButton size="small" onClick={() => toggleBookmark(post._id)} sx={{ color: isBookmarked ? '#F5A623' : '#94A3B8' }}>
-                        {isBookmarked ? <BookmarkIcon fontSize="small" /> : <BookmarkBorderIcon fontSize="small" />}
-                      </IconButton>
+                    <Divider sx={{ my: 0.5 }} />
 
-                      {/* Share */}
-                      <IconButton size="small" onClick={handleShare} sx={{ color: '#94A3B8' }}>
-                        <ShareIcon fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                  </Stack>
-
-                  {/* Inline Comments Section */}
-                  {isCommentsOpen && (
-                    <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed #E2E8F0' }}>
-                      {/* Existing comments */}
-                      <Stack spacing={1.5} sx={{ mb: 2 }}>
-                        {commentsList.map((c, i) => (
-                          <Paper key={c._id || i} elevation={0} sx={{ p: 1.5, bgcolor: '#F8FAFC', borderRadius: 2 }}>
-                            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#0F172A', fontSize: '0.85rem' }}>
-                                {c.username}
-                              </Typography>
-                              <Chip
-                                size="small"
-                                label={c.role === 'teacher' ? t.roleTeacher : c.role === 'ta' ? t.roleTA : t.roleStudent}
-                                sx={{
-                                  height: 18,
-                                  fontSize: '0.62rem',
-                                  fontWeight: 700,
-                                  bgcolor: c.role === 'teacher' ? '#DBEAFE' : '#E2E8F0',
-                                  color: c.role === 'teacher' ? '#1D4ED8' : '#475569'
-                                }}
-                              />
-                            </Stack>
-                            <Typography variant="body2" sx={{ color: '#334155', fontSize: '0.88rem' }}>
-                              {c.text}
-                            </Typography>
-                          </Paper>
-                        ))}
-                      </Stack>
-
-                      {/* Add comment */}
-                      <Stack direction="row" spacing={1}>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          placeholder={t.comment + '...'}
-                          value={commentInput}
-                          onChange={(e) => setCommentInput(e.target.value)}
-                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                        />
-                        <Button
-                          variant="contained"
-                          onClick={() => handleAddComment(post._id)}
+                    {/* Facebook Action Bar: React, Comment, Share */}
+                    <Box sx={{ position: 'relative' }}>
+                      {/* Floating Multi-Reactions Bar (Facebook Style) */}
+                      {hoveredPostId === post._id && (
+                        <Paper
+                          elevation={6}
+                          onMouseEnter={() => setHoveredPostId(post._id)}
+                          onMouseLeave={() => setHoveredPostId(null)}
                           sx={{
-                            bgcolor: '#F5A623',
-                            borderRadius: 2,
-                            px: 2,
-                            textTransform: 'none',
-                            fontWeight: 600,
-                            '&:hover': { bgcolor: '#E09212' }
+                            position: 'absolute',
+                            top: -46,
+                            left: 0,
+                            zIndex: 20,
+                            p: 0.6,
+                            px: 1,
+                            borderRadius: 6,
+                            bgcolor: '#FFFFFF',
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                            display: 'flex',
+                            gap: 1.2,
+                            alignItems: 'center'
                           }}
                         >
-                          <SendIcon fontSize="small" />
+                          <Tooltip title="Like">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleReact(post._id, 'like')}
+                              sx={{
+                                color: '#1877F2',
+                                transition: 'transform 0.15s',
+                                '&:hover': { transform: 'scale(1.25)' }
+                              }}
+                            >
+                              <ThumbUpIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Helpful / Insightful">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleReact(post._id, 'helpful')}
+                              sx={{
+                                color: '#F59E0B',
+                                transition: 'transform 0.15s',
+                                '&:hover': { transform: 'scale(1.25)' }
+                              }}
+                            >
+                              <LightbulbIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Academic Support">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleReact(post._id, 'support')}
+                              sx={{
+                                color: '#10B981',
+                                transition: 'transform 0.15s',
+                                '&:hover': { transform: 'scale(1.25)' }
+                              }}
+                            >
+                              <SchoolIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Bookmark">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleReact(post._id, 'bookmark')}
+                              sx={{
+                                color: '#8B5CF6',
+                                transition: 'transform 0.15s',
+                                '&:hover': { transform: 'scale(1.25)' }
+                              }}
+                            >
+                              <BookmarkIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Paper>
+                      )}
+
+                      <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.5 }}>
+                        {/* React Button with hover popover */}
+                        <Button
+                          fullWidth
+                          startIcon={activeReaction ? getReactionIcon(activeReaction) : <ThumbUpOutlinedIcon />}
+                          onMouseEnter={() => setHoveredPostId(post._id)}
+                          onClick={() => handleReact(post._id, activeReaction ? activeReaction : 'like')}
+                          sx={{
+                            color: activeReaction ? '#1877F2' : '#65676B',
+                            fontWeight: 700,
+                            textTransform: 'none',
+                            borderRadius: 2,
+                            '&:hover': { bgcolor: '#F2F2F2' }
+                          }}
+                        >
+                          {activeReaction === 'helpful' ? 'Helpful' : activeReaction === 'support' ? 'Support' : activeReaction === 'bookmark' ? 'Saved' : t.like}
+                        </Button>
+
+                        {/* Comment Button */}
+                        <Button
+                          fullWidth
+                          startIcon={<CommentIcon />}
+                          onClick={() => setOpenCommentPostId(isCommentsOpen ? null : post._id)}
+                          sx={{
+                            color: '#65676B',
+                            fontWeight: 700,
+                            textTransform: 'none',
+                            borderRadius: 2,
+                            '&:hover': { bgcolor: '#F2F2F2' }
+                          }}
+                        >
+                          {t.comment}
+                        </Button>
+
+                        {/* Share Button */}
+                        <Button
+                          fullWidth
+                          startIcon={<ShareIcon />}
+                          onClick={handleShare}
+                          sx={{
+                            color: '#65676B',
+                            fontWeight: 700,
+                            textTransform: 'none',
+                            borderRadius: 2,
+                            '&:hover': { bgcolor: '#F2F2F2' }
+                          }}
+                        >
+                          {t.share}
                         </Button>
                       </Stack>
                     </Box>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </Stack>
-      </Box>
 
-      {/* Create Campus Post Dialog */}
+                    {/* Inline Facebook Comments Section */}
+                    {isCommentsOpen && (
+                      <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid #E4E6EB' }}>
+                        {/* Comments list */}
+                        <Stack spacing={1.5} sx={{ mb: 2 }}>
+                          {commentsList.map((c, i) => (
+                            <Stack key={c._id || i} direction="row" spacing={1.2} alignItems="flex-start">
+                              <Avatar sx={{ width: 32, height: 32, bgcolor: c.role === 'teacher' ? '#1877F2' : '#10B981', mt: 0.5 }}>
+                                {c.role === 'teacher' ? <SchoolIcon fontSize="small" /> : <PersonIcon fontSize="small" />}
+                              </Avatar>
+                              <Box sx={{ flex: 1 }}>
+                                <Box sx={{ bgcolor: '#F0F2F5', p: 1.5, borderRadius: 3, display: 'inline-block', maxWidth: '90%' }}>
+                                  <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 0.3 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#050505', fontSize: '0.85rem' }}>
+                                      {c.username}
+                                    </Typography>
+                                    {c.role === 'teacher' && <VerifiedIcon sx={{ fontSize: 13, color: '#1877F2' }} />}
+                                    <Chip
+                                      size="small"
+                                      label={c.role === 'teacher' ? t.roleTeacher : c.role === 'ta' ? t.roleTA : t.roleStudent}
+                                      sx={{
+                                        height: 16,
+                                        fontSize: '0.6rem',
+                                        fontWeight: 700,
+                                        bgcolor: c.role === 'teacher' ? '#E7F3FF' : '#E4E6EB',
+                                        color: c.role === 'teacher' ? '#1877F2' : '#65676B'
+                                      }}
+                                    />
+                                  </Stack>
+                                  <Typography variant="body2" sx={{ color: '#050505', fontSize: '0.88rem' }}>
+                                    {c.text}
+                                  </Typography>
+                                </Box>
+                                <Stack direction="row" spacing={2} sx={{ pl: 1.5, mt: 0.4 }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#65676B', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}>
+                                    Like
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#65676B', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}>
+                                    Reply
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ color: '#8A8D91' }}>
+                                    Just now
+                                  </Typography>
+                                </Stack>
+                              </Box>
+                            </Stack>
+                          ))}
+                        </Stack>
+
+                        {/* Add Comment Input (Facebook Style) */}
+                        <Stack direction="row" spacing={1.2} alignItems="center">
+                          <Avatar sx={{ width: 32, height: 32, bgcolor: user?.role === 'teacher' ? '#1877F2' : '#F5A623' }}>
+                            {user?.role === 'teacher' ? <SchoolIcon fontSize="small" /> : <PersonIcon fontSize="small" />}
+                          </Avatar>
+                          <Box sx={{ flex: 1, position: 'relative' }}>
+                            <TextField
+                              fullWidth
+                              size="small"
+                              placeholder="Write an academic comment or question..."
+                              value={commentInput}
+                              onChange={(e) => setCommentInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleAddComment(post._id);
+                                }
+                              }}
+                              sx={{
+                                bgcolor: '#F0F2F5',
+                                borderRadius: 5,
+                                '& .MuiOutlinedInput-root': { borderRadius: 5, pr: 5 }
+                              }}
+                            />
+                            <IconButton
+                              size="small"
+                              onClick={() => handleAddComment(post._id)}
+                              sx={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#1877F2' }}
+                            >
+                              <SendIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        </Stack>
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </Stack>
+        </Grid>
+
+        {/* Facebook Right Sidebar (Contacts, Academic Notices, Deadlines) */}
+        <Grid item xs={12} md={4} sx={{ display: { xs: 'none', md: 'block' } }}>
+          <Stack spacing={2.5}>
+            
+            {/* University Notices & Announcements */}
+            <Paper elevation={0} sx={{ p: 2, borderRadius: 3, bgcolor: '#FFFFFF', border: '1px solid #E4E6EB' }}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                <AlertIcon sx={{ color: '#1877F2', fontSize: 20 }} />
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#050505' }}>
+                  Wollo Academic Notices
+                </Typography>
+              </Stack>
+              <Typography variant="body2" sx={{ color: '#050505', fontWeight: 600, mb: 0.5 }}>
+                Faculty Office Hours Active
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#65676B', display: 'block', mb: 1.5 }}>
+                Professors are available for thesis and exam consultations today in Tech Hall C and EE Lab 4.
+              </Typography>
+              <Divider sx={{ mb: 1.5 }} />
+              <Typography variant="body2" sx={{ color: '#050505', fontWeight: 600, mb: 0.5 }}>
+                Library 24/7 Access
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#65676B', display: 'block' }}>
+                Main Campus Study Lounges remain open around the clock for midterm preparation.
+              </Typography>
+            </Paper>
+
+            {/* Online Faculty & Study Peers Contacts (Facebook Contacts List) */}
+            <Paper elevation={0} sx={{ p: 2, borderRadius: 3, bgcolor: '#FFFFFF', border: '1px solid #E4E6EB' }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#050505' }}>
+                  Faculty & Contacts Online
+                </Typography>
+                <Chip size="small" label="Active" sx={{ height: 18, fontSize: '0.62rem', bgcolor: '#DEF7EC', color: '#047857', fontWeight: 700 }} />
+              </Stack>
+
+              <Stack spacing={1}>
+                {ONLINE_FACULTY_CONTACTS.map((contact) => (
+                  <Box
+                    key={contact.id}
+                    onClick={() => onDirectMessage && onDirectMessage({ _id: contact.id, username: contact.name, role: contact.role, department: contact.dept, officeHours: contact.office })}
+                    sx={{
+                      p: 1,
+                      borderRadius: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s',
+                      '&:hover': { bgcolor: '#F0F2F5' }
+                    }}
+                  >
+                    <Stack direction="row" spacing={1.2} alignItems="center">
+                      <Box sx={{ position: 'relative' }}>
+                        <Avatar sx={{ width: 34, height: 34, bgcolor: contact.role === 'teacher' ? '#1877F2' : contact.role === 'ta' ? '#F59E0B' : '#10B981' }}>
+                          {contact.role === 'teacher' ? <SchoolIcon fontSize="small" /> : <PersonIcon fontSize="small" />}
+                        </Avatar>
+                        <Box sx={{ position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, borderRadius: '50%', bgcolor: '#31A24C', border: '2px solid #fff' }} />
+                      </Box>
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 700, color: '#050505', fontSize: '0.85rem' }}>
+                          {contact.name}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#65676B', display: 'block', fontSize: '0.7rem' }}>
+                          {contact.office}
+                        </Typography>
+                      </Box>
+                    </Stack>
+
+                    <IconButton size="small" sx={{ color: '#1877F2' }}>
+                      <MessageUserIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                ))}
+              </Stack>
+            </Paper>
+
+            {/* Upcoming Academic Events */}
+            <Paper elevation={0} sx={{ p: 2, borderRadius: 3, bgcolor: '#FFFFFF', border: '1px solid #E4E6EB' }}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                <EventIcon sx={{ color: '#F59E0B', fontSize: 20 }} />
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#050505' }}>
+                  Academic Events & Deadlines
+                </Typography>
+              </Stack>
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: '#050505', fontSize: '0.85rem' }}>
+                  Algorithms Midterm Exam
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#65676B' }}>
+                  Tuesday at 9:00 AM • Tech Hall C
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: '#050505', fontSize: '0.85rem' }}>
+                  DSP Laboratory Report Submission
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#65676B' }}>
+                  Thursday at 5:00 PM • Engineering Portal
+                </Typography>
+              </Box>
+            </Paper>
+          </Stack>
+        </Grid>
+      </Grid>
+
+      {/* Facebook-style Create Post Modal */}
       <Dialog
         open={composerOpen}
         onClose={() => setComposerOpen(false)}
@@ -725,12 +1114,51 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
       >
-        <DialogTitle sx={{ fontWeight: 700, color: '#0F172A' }}>
-          {t.newPost}
+        <DialogTitle sx={{ fontWeight: 800, textAlign: 'center', pb: 1, borderBottom: '1px solid #E4E6EB', color: '#050505' }}>
+          Create Campus Post
         </DialogTitle>
         <form onSubmit={handleCreatePost}>
-          <DialogContent>
-            <Stack spacing={2.2}>
+          <DialogContent sx={{ pt: 2.5 }}>
+            <Stack spacing={2}>
+              {/* User Identity & Audience selector */}
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Avatar sx={{ bgcolor: user?.role === 'teacher' ? '#1877F2' : '#F5A623', width: 44, height: 44 }}>
+                  {user?.role === 'teacher' ? <SchoolIcon /> : <PersonIcon />}
+                </Avatar>
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#050505' }}>
+                    {user?.username || 'You'}
+                  </Typography>
+                  <Chip
+                    icon={<PublicIcon sx={{ fontSize: 13, color: '#050505 !important' }} />}
+                    label="Campus Public"
+                    size="small"
+                    sx={{ height: 22, fontSize: '0.7rem', fontWeight: 600, bgcolor: '#E4E6EB' }}
+                  />
+                </Box>
+              </Stack>
+
+              {/* Title */}
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Post Title or Subject..."
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+
+              {/* Content (Large What's on your mind textarea) */}
+              <TextField
+                fullWidth
+                multiline
+                rows={4}
+                placeholder={`What's on your mind, ${user?.username || 'Scholar'}?`}
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+
               {/* Category */}
               <FormControl fullWidth size="small">
                 <InputLabel>{t.postCategory}</InputLabel>
@@ -747,29 +1175,7 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
                 </Select>
               </FormControl>
 
-              {/* Title */}
-              <TextField
-                fullWidth
-                size="small"
-                label={t.postTitle}
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              />
-
-              {/* Content */}
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                size="small"
-                label={t.postContent}
-                value={formData.content}
-                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              />
-
-              {/* Poll toggle */}
+              {/* Poll builder toggle */}
               <Button
                 variant={formData.includePoll ? 'contained' : 'outlined'}
                 startIcon={<PollIcon />}
@@ -777,24 +1183,24 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
                 sx={{
                   textTransform: 'none',
                   borderRadius: 2,
-                  bgcolor: formData.includePoll ? '#F5A623' : 'transparent',
-                  borderColor: '#F5A623',
-                  color: formData.includePoll ? '#fff' : '#F5A623',
-                  '&:hover': { bgcolor: formData.includePoll ? '#E09212' : '#FFFBEB' }
+                  bgcolor: formData.includePoll ? '#1877F2' : 'transparent',
+                  borderColor: '#1877F2',
+                  color: formData.includePoll ? '#fff' : '#1877F2',
+                  '&:hover': { bgcolor: formData.includePoll ? '#0D6EFD' : '#E7F3FF' }
                 }}
               >
-                {formData.includePoll ? 'Remove Poll' : 'Attach Quick Poll'}
+                {formData.includePoll ? 'Remove Poll' : 'Attach Campus Quick Poll'}
               </Button>
 
               {formData.includePoll && (
-                <Stack spacing={1.5} sx={{ p: 2, bgcolor: '#F8FAFC', borderRadius: 2, border: '1px solid #E2E8F0' }}>
+                <Stack spacing={1.5} sx={{ p: 2, bgcolor: '#F0F2F5', borderRadius: 2, border: '1px solid #CCD0D5' }}>
                   <TextField
                     fullWidth
                     size="small"
                     label="Poll Question"
                     value={formData.pollQuestion}
                     onChange={(e) => setFormData({ ...formData, pollQuestion: e.target.value })}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#fff' } }}
                   />
                   {formData.pollOptions.map((opt, i) => (
                     <TextField
@@ -808,14 +1214,14 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
                         newOpts[i] = e.target.value;
                         setFormData({ ...formData, pollOptions: newOpts });
                       }}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#fff' } }}
                     />
                   ))}
                   <Button
                     size="small"
                     startIcon={<AddIcon />}
                     onClick={() => setFormData({ ...formData, pollOptions: [...formData.pollOptions, ''] })}
-                    sx={{ alignSelf: 'flex-start', textTransform: 'none', color: '#F5A623' }}
+                    sx={{ alignSelf: 'flex-start', textTransform: 'none', color: '#1877F2' }}
                   >
                     Add Option
                   </Button>
@@ -825,28 +1231,69 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
           </DialogContent>
 
           <DialogActions sx={{ px: 3, pb: 2.5 }}>
-            <Button onClick={() => setComposerOpen(false)} sx={{ color: '#64748B', textTransform: 'none' }}>
-              {t.cancel}
+            <Button onClick={() => setComposerOpen(false)} sx={{ color: '#65676B', textTransform: 'none', fontWeight: 600 }}>
+              Cancel
             </Button>
             <Button
               type="submit"
               variant="contained"
-              startIcon={<SendIcon />}
+              fullWidth
               sx={{
-                bgcolor: '#F5A623',
+                bgcolor: '#1877F2',
                 color: '#fff',
                 fontWeight: 700,
                 textTransform: 'none',
                 borderRadius: 2,
-                px: 3,
-                '&:hover': { bgcolor: '#E09212' }
+                py: 1,
+                fontSize: '0.95rem',
+                '&:hover': { bgcolor: '#0D6EFD' }
               }}
             >
-              {t.publish}
+              Post
             </Button>
           </DialogActions>
         </form>
       </Dialog>
+
+      {/* Post Context / Options Menu */}
+      <Menu
+        anchorEl={postMenuAnchor}
+        open={Boolean(postMenuAnchor)}
+        onClose={() => setPostMenuAnchor(null)}
+        PaperProps={{ sx: { borderRadius: 2, minWidth: 180 } }}
+      >
+        <MenuItem
+          onClick={() => {
+            if (selectedPostForMenu) toggleBookmark(selectedPostForMenu._id);
+            setPostMenuAnchor(null);
+          }}
+        >
+          <BookmarkIcon fontSize="small" sx={{ mr: 1.5, color: '#8B5CF6' }} />
+          Save post to Bookmarks
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            handleShare();
+            setPostMenuAnchor(null);
+          }}
+        >
+          <ShareIcon fontSize="small" sx={{ mr: 1.5, color: '#1877F2' }} />
+          Copy post link
+        </MenuItem>
+        {selectedPostForMenu?.author?._id !== user?._id && (
+          <MenuItem
+            onClick={() => {
+              if (selectedPostForMenu?.author && onDirectMessage) {
+                onDirectMessage(selectedPostForMenu.author);
+              }
+              setPostMenuAnchor(null);
+            }}
+          >
+            <MessageUserIcon fontSize="small" sx={{ mr: 1.5, color: '#10B981' }} />
+            Message author directly
+          </MenuItem>
+        )}
+      </Menu>
     </Box>
   );
 };
