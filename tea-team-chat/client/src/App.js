@@ -18,6 +18,7 @@ import AuthSuccess from './pages/AuthSuccess';
 
 // Components
 import PrivateRoute from './components/PrivateRoute';
+import NetworkStatusBanner from './components/NetworkStatusBanner';
 
 const theme = createTheme({
   palette: {
@@ -64,6 +65,7 @@ function App() {
         <AuthProvider>
           <SocketProvider>
             <div className="App">
+              <NetworkStatusBanner />
               <Toaster 
                 position="top-right"
                 toastOptions={{
