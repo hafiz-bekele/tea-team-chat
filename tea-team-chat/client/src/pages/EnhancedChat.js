@@ -142,8 +142,10 @@ const EnhancedChat = () => {
 
   const handleUserSelect = (targetUser) => {
     setSelectedUser(targetUser);
+    setMessages([]);
     fetchMessages(targetUser._id);
     setActiveView('chat');
+    setMobileOpen(false);
     setConversationsMap(prev => ({
       ...prev,
       [targetUser._id]: {
@@ -217,11 +219,12 @@ const EnhancedChat = () => {
         scrollToBottom();
         
         // Mark as delivered
-        if (message.receiver?._id === user._id) {
+        if (user?._id && message.receiver?._id === user._id) {
           markAsDelivered(message._id);
         }
 
-        const partnerId = message.sender?._id === user._id
+        const currentUserId = user?._id;
+        const partnerId = currentUserId && message.sender?._id === currentUserId
           ? (message.receiver?._id || message.receiver)
           : (message.sender?._id || message.sender);
 
@@ -339,10 +342,12 @@ const EnhancedChat = () => {
 
   // Mark messages as read when chat is opened
   useEffect(() => {
-    if (selectedUser && messages.length > 0) {
+    if (selectedUser && messages.length > 0 && user?._id) {
       messages.forEach(message => {
-        if (message.receiver?._id === user._id && message.status !== 'read') {
-          markAsRead(message._id, message.sender._id);
+        const receiverId = message.receiver?._id || message.receiver;
+        const senderId = message.sender?._id || message.sender;
+        if (receiverId === user._id && message.status !== 'read' && senderId) {
+          markAsRead(message._id, senderId);
         }
       });
     }
@@ -615,12 +620,6 @@ const EnhancedChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleUserSelect = (selectedUser) => {
-    setSelectedUser(selectedUser);
-    fetchMessages(selectedUser._id);
-    setMobileOpen(false);
-    setMessages([]);
-  };
 
   const handleLogout = async () => {
     await logout();
