@@ -57,9 +57,12 @@ app.use(passport.session());
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/tea-team-chat';
 const isAtlas = mongoUri.includes('mongodb.net') || mongoUri.startsWith('mongodb+srv://');
 
+const seedRealData = require('./utils/seedRealData');
+
 // Connection lifecycle event listeners
 mongoose.connection.on('connected', () => {
   console.log(`✅ MongoDB connected successfully [${isAtlas ? 'MongoDB Atlas (Cloud)' : 'Local MongoDB'}]`);
+  seedRealData();
 });
 
 mongoose.connection.on('error', (err) => {
@@ -91,6 +94,9 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/posts', require('./routes/posts'));
+app.use('/api/stories', require('./routes/stories'));
+app.use('/api/shorts', require('./routes/shorts'));
+app.use('/api/pods', require('./routes/pods'));
 
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));

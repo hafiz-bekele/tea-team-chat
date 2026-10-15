@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -26,84 +26,94 @@ import {
   Close as CloseIcon,
   CheckCircle as ActiveIcon
 } from '@mui/icons-material';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import { translations } from '../utils/translations';
 
-const DEFAULT_PODS = [
-  {
-    id: 'pod-1',
-    name: 'CS Year 3: Distributed Systems & Cloud',
-    host: 'Prof. Yohannes K.',
-    hostRole: 'teacher',
-    membersCount: 14,
-    topic: 'Consensus Algorithms & Raft Election Practical Review',
-    status: 'live',
-    type: 'video'
-  },
-  {
-    id: 'pod-2',
-    name: 'AI & Machine Learning Study Sprint',
-    host: 'Dawit B.',
-    hostRole: 'student',
-    membersCount: 8,
-    topic: 'Neural Network Backpropagation Matrix Math',
-    status: 'live',
-    type: 'audio'
-  },
-  {
-    id: 'pod-3',
-    name: 'Faculty Q&A Consultation Lounge',
-    host: 'Dr. Rahel Mengistu',
-    hostRole: 'teacher',
-    membersCount: 5,
-    topic: 'Open Office Hours: DSP Lab 4 Inquiries & Filter Design',
-    status: 'live',
-    type: 'video'
-  },
-  {
-    id: 'pod-4',
-    name: 'Freshman Engineering Mathematics I',
-    host: 'Kaleb A. (TA)',
-    hostRole: 'ta',
-    membersCount: 22,
-    topic: 'Integration by Parts & Substitution Worksheets',
-    status: 'live',
-    type: 'audio'
-  }
-];
-
 const StudyPods = ({ user, onStartVideoCall, lang = 'en' }) => {
   const t = translations[lang] || translations.en;
-  const [pods, setPods] = useState(DEFAULT_PODS);
+  const [pods, setPods] = useState([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newPod, setNewPod] = useState({ name: '', topic: '', type: 'video' });
 
-  const handleJoinPod = (pod) => {
+  const fetchPods = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/pods', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.data && res.data.length > 0) {
+        const formatted = res.data.map(p => ({
+          id: p._id,
+          name: p.name,
+          host: p.host?.username || p.hostName || 'Campus Faculty',
+          hostRole: p.host?.role || p.hostRole || 'teacher',
+          membersCount: p.membersCount || 1,
+          topic: p.topic,
+          status: p.status || 'live',
+          type: p.type || 'video'
+        }));
+        setPods(formatted);
+      }
+    } catch (err) {
+      console.warn('Error fetching pods:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchPods();
+  }, []);
+
+  const handleJoinPod = async (pod) => {
     toast.success(`Joined ${pod.name}! Connecting audio and video stream...`);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`/api/pods/${pod.id}/join`, {}, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      setPods(prev => prev.map(p => p.id === pod.id ? { ...p, membersCount: (p.membersCount || 1) + 1 } : p));
+    } catch (e) {
+      // Ignore join error
+    }
     if (onStartVideoCall) {
       onStartVideoCall(pod);
     }
   };
 
-  const handleCreatePod = (e) => {
+  const handleCreatePod = async (e) => {
     e.preventDefault();
     if (!newPod.name.trim()) return;
 
-    const created = {
-      id: `pod-${Date.now()}`,
-      name: newPod.name,
-      host: user?.username || 'You',
-      hostRole: user?.role || 'student',
-      membersCount: 1,
-      topic: newPod.topic || 'General Collaborative Study Session',
-      status: 'live',
-      type: newPod.type
-    };
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post('/api/pods', {
+        name: newPod.name.trim(),
+        topic: newPod.topic ? newPod.topic.trim() : 'General Collaborative Study Session',
+        type: newPod.type
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
 
-    setPods([created, ...pods]);
-    setCreateDialogOpen(false);
-    setNewPod({ name: '', topic: '', type: 'video' });
-    toast.success('Study Pod created! Peers can now join.');
+      const p = res.data;
+      const created = {
+        id: p._id,
+        name: p.name,
+        host: p.host?.username || user?.username || 'You',
+        hostRole: p.host?.role || user?.role || 'student',
+        membersCount: p.membersCount || 1,
+        topic: p.topic,
+        status: p.status || 'live',
+        type: p.type || 'video'
+      };
+
+      setPods([created, ...pods]);
+      setCreateDialogOpen(false);
+      setNewPod({ name: '', topic: '', type: 'video' });
+      toast.success('Study Pod created and published to campus!');
+    } catch (err) {
+      console.error('Error creating pod:', err);
+      toast.error('Failed to create study pod');
+    }
   };
 
   return (

@@ -115,6 +115,7 @@ const EnhancedChat = () => {
   });
   const [chatFilter, setChatFilter] = useState('all'); // 'all', 'teachers', 'students', 'online'
   const [pinnedUserIds, setPinnedUserIds] = useState(() => new Set(['teacher-1']));
+  const [conversationsMap, setConversationsMap] = useState({});
 
   const toggleSidebar = () => {
     setSidebarOpen(prev => {
@@ -137,6 +138,19 @@ const EnhancedChat = () => {
       }
       return next;
     });
+  };
+
+  const handleUserSelect = (targetUser) => {
+    setSelectedUser(targetUser);
+    fetchMessages(targetUser._id);
+    setActiveView('chat');
+    setConversationsMap(prev => ({
+      ...prev,
+      [targetUser._id]: {
+        ...(prev[targetUser._id] || {}),
+        unreadCount: 0
+      }
+    }));
   };
 
   const t = translations[lang] || translations.en;
@@ -188,9 +202,10 @@ const EnhancedChat = () => {
   const typingTimeoutRef = useRef(null);
   const messageInputRef = useRef(null);
 
-  // Fetch users on mount
+  // Fetch users & recent conversations on mount
   useEffect(() => {
     fetchUsers();
+    fetchRecentConversations();
   }, []);
 
   // Socket.io event listeners
@@ -202,8 +217,25 @@ const EnhancedChat = () => {
         scrollToBottom();
         
         // Mark as delivered
-        if (message.receiver._id === user._id) {
+        if (message.receiver?._id === user._id) {
           markAsDelivered(message._id);
+        }
+
+        const partnerId = message.sender?._id === user._id
+          ? (message.receiver?._id || message.receiver)
+          : (message.sender?._id || message.sender);
+
+        if (partnerId) {
+          setConversationsMap(prev => ({
+            ...prev,
+            [partnerId]: {
+              lastMessage: message.content || 'Attachment',
+              createdAt: message.createdAt || new Date(),
+              status: 'delivered',
+              senderId: message.sender?._id || message.sender,
+              unreadCount: selectedUser?._id === partnerId ? 0 : (prev[partnerId]?.unreadCount || 0) + 1
+            }
+          }));
         }
       });
 
@@ -316,6 +348,17 @@ const EnhancedChat = () => {
     }
   }, [selectedUser, messages, user]);
 
+  const fetchRecentConversations = async () => {
+    try {
+      const response = await axios.get('/api/messages/conversations/recent', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      setConversationsMap(response.data || {});
+    } catch (error) {
+      console.warn('Error loading recent conversations:', error);
+    }
+  };
+
   const fetchUsers = async () => {
     try {
       const response = await axios.get('/api/users', {
@@ -376,6 +419,19 @@ const EnhancedChat = () => {
       setMessages(prev => prev.map(msg => 
         msg._id === tempMessage._id ? response.data : msg
       ));
+
+      // Update recent conversation snippet
+      const partnerId = selectedUser._id;
+      setConversationsMap(prev => ({
+        ...prev,
+        [partnerId]: {
+          lastMessage: response.data.content || newMessage,
+          createdAt: response.data.createdAt || new Date(),
+          status: 'sent',
+          senderId: user._id,
+          unreadCount: 0
+        }
+      }));
 
       if (socket) {
         socket.emit('sendMessage', {

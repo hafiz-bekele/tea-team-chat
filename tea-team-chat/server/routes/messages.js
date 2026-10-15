@@ -3,6 +3,52 @@ const router = express.Router();
 const { protect } = require('../middleware/auth');
 const Message = require('../models/Message');
 
+// Get recent conversation summaries for current user
+router.get('/conversations/recent', protect, async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const messages = await Message.find({
+      $or: [
+        { sender: userId },
+        { receiver: userId }
+      ],
+      deletedForEveryone: false,
+      deletedFor: { $ne: userId }
+    })
+    .sort({ createdAt: -1 })
+    .limit(300);
+
+    const conversations = {};
+
+    messages.forEach(msg => {
+      const otherId = msg.sender?.toString() === userId.toString()
+        ? msg.receiver?.toString()
+        : msg.sender?.toString();
+
+      if (!otherId) return;
+
+      if (!conversations[otherId]) {
+        conversations[otherId] = {
+          lastMessage: msg.content || (msg.attachments && msg.attachments.length > 0 ? 'Attachment' : ''),
+          createdAt: msg.createdAt,
+          status: msg.status || 'sent',
+          senderId: msg.sender?.toString(),
+          unreadCount: 0
+        };
+      }
+
+      if (msg.receiver?.toString() === userId.toString() && msg.status !== 'read') {
+        conversations[otherId].unreadCount += 1;
+      }
+    });
+
+    res.json(conversations);
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving conversations', error: error.message });
+  }
+});
+
 // Get messages between two users
 router.get('/:userId', protect, async (req, res) => {
   try {

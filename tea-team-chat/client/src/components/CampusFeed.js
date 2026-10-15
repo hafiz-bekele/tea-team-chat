@@ -168,6 +168,7 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
   const t = translations[lang] || translations.en;
 
   const [posts, setPosts] = useState(FALLBACK_POSTS);
+  const [facultyContacts, setFacultyContacts] = useState(ONLINE_FACULTY_CONTACTS);
   const [activeTab, setActiveTab] = useState('all');
   const [composerOpen, setComposerOpen] = useState(false);
   const [bookmarkedPosts, setBookmarkedPosts] = useState({});
@@ -189,8 +190,32 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
     pollOptions: ['', '']
   });
 
+  const fetchUsers = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/users', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.data && res.data.length > 0) {
+        const contacts = res.data.map(u => ({
+          id: u._id,
+          name: u.username,
+          role: u.role || 'student',
+          dept: u.department || 'Computer Science',
+          office: u.officeHours || (u.role === 'teacher' ? 'Faculty Office' : 'Library / Campus'),
+          online: true,
+          userObj: u
+        }));
+        setFacultyContacts(contacts);
+      }
+    } catch (e) {
+      // Fallback intact
+    }
+  };
+
   useEffect(() => {
     fetchPosts();
+    fetchUsers();
   }, [activeTab]);
 
   const fetchPosts = async () => {
@@ -1037,10 +1062,10 @@ const CampusFeed = ({ user, onDirectMessage, lang = 'en' }) => {
               </Stack>
 
               <Stack spacing={1}>
-                {ONLINE_FACULTY_CONTACTS.map((contact) => (
+                {facultyContacts.map((contact) => (
                   <Box
                     key={contact.id}
-                    onClick={() => onDirectMessage && onDirectMessage({ _id: contact.id, username: contact.name, role: contact.role, department: contact.dept, officeHours: contact.office })}
+                    onClick={() => onDirectMessage && onDirectMessage(contact.userObj || { _id: contact.id, username: contact.name, role: contact.role, department: contact.dept, officeHours: contact.office })}
                     sx={{
                       p: 1,
                       borderRadius: 2,

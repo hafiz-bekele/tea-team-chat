@@ -28,55 +28,24 @@ import {
   Pause as PauseIcon,
   Verified as VerifiedIcon
 } from '@mui/icons-material';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import { translations } from '../utils/translations';
 
-const INITIAL_STORIES = [
-  {
-    id: 'story-1',
-    author: 'Prof. Yohannes K.',
-    role: 'teacher',
-    avatar: '',
-    time: '2h ago',
-    bgGradient: 'linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%)',
-    content: 'Distributed Systems midterm review worksheet is now live in the course files! Consult me during office hours today.',
-    previewTitle: 'Midterm Worksheet'
-  },
-  {
-    id: 'story-2',
-    author: 'Dr. Rahel Mengistu',
-    role: 'teacher',
-    avatar: '',
-    time: '4h ago',
-    bgGradient: 'linear-gradient(135deg, #065F46 0%, #10B981 100%)',
-    content: 'DSP Lab Bench 4 is open for practice this afternoon from 2:00 PM to 5:00 PM. All students welcome.',
-    previewTitle: 'Open Lab Practice'
-  },
-  {
-    id: 'story-3',
-    author: 'Selamawit T.',
-    role: 'student',
-    avatar: '',
-    time: '5h ago',
-    bgGradient: 'linear-gradient(135deg, #6D28D9 0%, #8B5CF6 100%)',
-    content: 'Study group meeting at Main Library 3rd floor. We are solving dynamic programming and graph algorithms!',
-    previewTitle: 'Library Study Group'
-  },
-  {
-    id: 'story-4',
-    author: 'Dawit Bekele',
-    role: 'student',
-    avatar: '',
-    time: '7h ago',
-    bgGradient: 'linear-gradient(135deg, #C2410C 0%, #F97316 100%)',
-    content: 'Just finished coding our semester AI project on pathfinding heuristics! Super excited to present tomorrow.',
-    previewTitle: 'AI Project Complete'
-  }
-];
+const formatStoryTime = (dateStr) => {
+  if (!dateStr) return 'Recently';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+};
 
 const CampusStories = ({ user, lang = 'en' }) => {
   const t = translations[lang] || translations.en;
-  const [stories, setStories] = useState(INITIAL_STORIES);
+  const [stories, setStories] = useState([]);
   const [activeStoryIndex, setActiveStoryIndex] = useState(null);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -86,6 +55,37 @@ const CampusStories = ({ user, lang = 'en' }) => {
   const [selectedGradient, setSelectedGradient] = useState('linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%)');
 
   const progressTimerRef = useRef(null);
+
+  // Fetch real stories from backend
+  const fetchStories = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/stories', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.data && res.data.length > 0) {
+        const formatted = res.data.map(s => ({
+          id: s._id,
+          author: s.author?.username || s.authorName || 'Campus Member',
+          role: s.author?.role || s.role || 'student',
+          avatar: s.author?.profilePicture || '',
+          time: formatStoryTime(s.createdAt),
+          bgGradient: s.bgGradient || 'linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%)',
+          content: s.content,
+          previewTitle: s.previewTitle || s.content.slice(0, 24) + '...',
+          views: s.views || [],
+          replies: s.replies || []
+        }));
+        setStories(formatted);
+      }
+    } catch (err) {
+      console.warn('Using existing stories:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchStories();
+  }, []);
 
   // Auto-advancing story timer
   useEffect(() => {
@@ -104,10 +104,21 @@ const CampusStories = ({ user, lang = 'en' }) => {
     return () => clearInterval(progressTimerRef.current);
   }, [activeStoryIndex, isPaused]);
 
-  const handleOpenStory = (index) => {
+  const handleOpenStory = async (index) => {
     setActiveStoryIndex(index);
     setProgress(0);
     setIsPaused(false);
+    const targetStory = stories[index];
+    if (targetStory?.id) {
+      try {
+        const token = localStorage.getItem('token');
+        await axios.post(`/api/stories/${targetStory.id}/view`, {}, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+      } catch (e) {
+        // Silent view count error
+      }
+    }
   };
 
   const handleCloseStory = () => {
@@ -133,32 +144,55 @@ const CampusStories = ({ user, lang = 'en' }) => {
     }
   };
 
-  const handleSendReply = (e) => {
+  const handleSendReply = async (e) => {
     e.preventDefault();
-    if (!replyText.trim()) return;
-    toast.success(`Reply sent to ${stories[activeStoryIndex].author}`);
-    setReplyText('');
+    if (!replyText.trim() || activeStoryIndex === null) return;
+    const currentStory = stories[activeStoryIndex];
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`/api/stories/${currentStory.id}/reply`, { text: replyText }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      toast.success(`Reply sent to ${currentStory.author}`);
+      setReplyText('');
+    } catch (err) {
+      toast.error('Failed to send reply');
+    }
   };
 
-  const handleCreateStory = (e) => {
+  const handleCreateStory = async (e) => {
     e.preventDefault();
     if (!storyText.trim()) return;
 
-    const newStory = {
-      id: `story-${Date.now()}`,
-      author: user?.username || 'You',
-      role: user?.role || 'student',
-      avatar: user?.profilePicture || '',
-      time: 'Just now',
-      bgGradient: selectedGradient,
-      content: storyText,
-      previewTitle: storyText.slice(0, 24) + '...'
-    };
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post('/api/stories', {
+        content: storyText.trim(),
+        previewTitle: storyText.trim().slice(0, 24) + '...',
+        bgGradient: selectedGradient
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
 
-    setStories([newStory, ...stories]);
-    setCreateStoryOpen(false);
-    setStoryText('');
-    toast.success('Your story was published successfully');
+      const created = {
+        id: res.data._id,
+        author: res.data.author?.username || user?.username || 'You',
+        role: res.data.author?.role || user?.role || 'student',
+        avatar: res.data.author?.profilePicture || user?.profilePicture || '',
+        time: 'Just now',
+        bgGradient: res.data.bgGradient || selectedGradient,
+        content: res.data.content,
+        previewTitle: res.data.previewTitle || storyText.slice(0, 24) + '...'
+      };
+
+      setStories([created, ...stories]);
+      setCreateStoryOpen(false);
+      setStoryText('');
+      toast.success('Your story was published successfully to campus');
+    } catch (err) {
+      console.error('Error creating story:', err);
+      toast.error('Failed to publish story');
+    }
   };
 
   const activeStory = activeStoryIndex !== null ? stories[activeStoryIndex] : null;

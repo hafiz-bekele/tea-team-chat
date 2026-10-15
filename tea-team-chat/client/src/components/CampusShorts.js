@@ -41,69 +41,14 @@ import {
   MusicNote as MusicNoteIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import { translations } from '../utils/translations';
-
-// High-quality educational campus sample shorts with real study visuals
-const INITIAL_SHORTS = [
-  {
-    id: 'short-1',
-    title: '3-Minute Masterclass: Fast Matrix Multiplication for AI',
-    description: 'Breakdown of Strassen algorithm vs standard O(n^3) matrix multiplication. Vital for university exam preparation and neural networks!',
-    author: 'Prof. Yohannes K.',
-    role: 'teacher',
-    department: 'Computer Science',
-    views: '2.4K',
-    likesCount: 342,
-    commentsCount: 28,
-    soundTrack: 'Faculty Lecture Series Vol. 4',
-    bgGradient: 'linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%)',
-    videoCodeSnippet: 'C[i][j] = sum(A[i][k] * B[k][j])\n// Strassen recursive submatrices\nM1 = (A11 + A22) * (B11 + B22)\nM2 = (A21 + A22) * B11\nComplexity reduced to O(n^2.807) [Optimal]',
-    comments: [
-      { id: 'c1', user: 'Selamawit', role: 'student', text: 'Will this question appear in Monday midterm exam?' },
-      { id: 'c2', user: 'Prof. Yohannes K.', role: 'teacher', text: 'Yes, Section 3 will include recursive master theorem calculation.' }
-    ]
-  },
-  {
-    id: 'short-2',
-    title: 'Wollo University Lab: Digital Signal Processing Oscilloscope Demo',
-    description: 'Capturing sinusoidal interference and configuring low-pass Butterworth filters on Lab Bench 4. Check out the noise attenuation!',
-    author: 'Dr. Rahel M.',
-    role: 'teacher',
-    department: 'Electrical Engineering',
-    views: '1.8K',
-    likesCount: 289,
-    commentsCount: 19,
-    soundTrack: 'Lab Bench 4 Audio Log',
-    bgGradient: 'linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)',
-    videoCodeSnippet: 'H(s) = 1 / (s^2 + sqrt(2)*s + 1)\nfc = 2.4 kHz Cutoff Frequency\nSignal-to-Noise Ratio: +18 dB Gain',
-    comments: [
-      { id: 'c3', user: 'Dawit B.', role: 'student', text: 'Thank you Doctor, this clears up the lab report calculations!' }
-    ]
-  },
-  {
-    id: 'short-3',
-    title: 'Student Study Trick: How to Remember All 12 Cranial Nerves',
-    description: 'Medical & Health Sciences campus mnemonic that saved our entire study pod during the anatomy practical session!',
-    author: 'Blen Tesfaye',
-    role: 'student',
-    department: 'Medicine & Health',
-    views: '4.1K',
-    likesCount: 512,
-    commentsCount: 46,
-    soundTrack: 'Campus Study Lounge Beats',
-    bgGradient: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-    videoCodeSnippet: 'I: Olfactory (Smell)\nII: Optic (Vision)\nIII: Oculomotor (Eye movement)\nIV: Trochlear (Superior oblique)\nV: Trigeminal (Facial sensory)',
-    comments: [
-      { id: 'c4', user: 'Kaleb A.', role: 'student', text: 'Saved this right to my bookmarks!' }
-    ]
-  }
-];
 
 const CampusShorts = ({ user, lang = 'en' }) => {
   const t = translations[lang] || translations.en;
 
-  const [shortsList, setShortsList] = useState(INITIAL_SHORTS);
+  const [shortsList, setShortsList] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -119,9 +64,75 @@ const CampusShorts = ({ user, lang = 'en' }) => {
     snippet: ''
   });
 
-  const activeShort = shortsList[currentIndex] || shortsList[0];
+  const fetchShorts = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/shorts', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.data && res.data.length > 0) {
+        const formatted = res.data.map(s => {
+          const isLiked = user?._id && Array.isArray(s.likes)
+            ? s.likes.some(l => (l._id || l).toString() === user._id.toString())
+            : false;
+
+          return {
+            id: s._id,
+            title: s.title,
+            description: s.description,
+            author: s.author?.username || s.authorName || 'Campus Faculty',
+            role: s.author?.role || s.role || 'teacher',
+            department: s.department || 'Computer Science',
+            views: `${s.views || 1}`,
+            likesCount: s.likes ? s.likes.length : 0,
+            commentsCount: s.comments ? s.comments.length : 0,
+            soundTrack: s.soundTrack || 'Campus Audio',
+            bgGradient: s.bgGradient || 'linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%)',
+            videoCodeSnippet: s.videoCodeSnippet || '',
+            comments: (s.comments || []).map(c => ({
+              id: c._id || Date.now().toString(),
+              user: c.username || 'Peer',
+              role: c.role || 'student',
+              text: c.text
+            })),
+            isLiked
+          };
+        });
+
+        setShortsList(formatted);
+        const lMap = {};
+        formatted.forEach(s => {
+          if (s.isLiked) lMap[s.id] = true;
+        });
+        setLikedMap(lMap);
+      }
+    } catch (err) {
+      console.warn('Error fetching shorts:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchShorts();
+  }, [user?._id]);
+
+  const activeShort = shortsList[currentIndex] || shortsList[0] || {
+    id: 'placeholder',
+    title: 'Loading campus shorts...',
+    description: 'Educational micro-lectures are loading from the database.',
+    author: 'Faculty',
+    role: 'teacher',
+    department: 'Campus',
+    views: '1',
+    likesCount: 0,
+    commentsCount: 0,
+    soundTrack: 'Campus Feed Audio',
+    bgGradient: 'linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%)',
+    videoCodeSnippet: '// Loading live campus code',
+    comments: []
+  };
 
   const handleNext = () => {
+    if (shortsList.length === 0) return;
     if (currentIndex < shortsList.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else {
@@ -130,6 +141,7 @@ const CampusShorts = ({ user, lang = 'en' }) => {
   };
 
   const handlePrev = () => {
+    if (shortsList.length === 0) return;
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
     } else {
@@ -137,18 +149,27 @@ const CampusShorts = ({ user, lang = 'en' }) => {
     }
   };
 
-  const toggleLike = (shortId) => {
+  const toggleLike = async (shortId) => {
     const isLiked = likedMap[shortId];
     setLikedMap(prev => ({ ...prev, [shortId]: !isLiked }));
     setShortsList(prev => prev.map(s => {
       if (s.id === shortId) {
         return {
           ...s,
-          likesCount: isLiked ? s.likesCount - 1 : s.likesCount + 1
+          likesCount: isLiked ? Math.max(0, s.likesCount - 1) : s.likesCount + 1
         };
       }
       return s;
     }));
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`/api/shorts/${shortId}/like`, {}, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+    } catch (err) {
+      console.error('Error toggling like:', err);
+    }
   };
 
   const toggleBookmark = (shortId) => {
@@ -162,15 +183,16 @@ const CampusShorts = ({ user, lang = 'en' }) => {
     toast.success('Campus short link copied to clipboard');
   };
 
-  const handleAddComment = (e) => {
+  const handleAddComment = async (e) => {
     e.preventDefault();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || !activeShort?.id) return;
 
+    const commentText = newComment.trim();
     const commentObj = {
       id: Date.now().toString(),
       user: user?.username || 'You',
       role: user?.role || 'student',
-      text: newComment.trim()
+      text: commentText
     };
 
     setShortsList(prev => prev.map(s => {
@@ -185,36 +207,64 @@ const CampusShorts = ({ user, lang = 'en' }) => {
     }));
 
     setNewComment('');
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`/api/shorts/${activeShort.id}/comment`, { text: commentText }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      toast.success('Comment posted');
+    } catch (err) {
+      toast.error('Failed to post comment');
+    }
   };
 
-  const handleUploadSubmit = (e) => {
+  const handleUploadSubmit = async (e) => {
     e.preventDefault();
     if (!newShortForm.title.trim()) {
       toast.error('Title is required');
       return;
     }
 
-    const createdShort = {
-      id: `short-${Date.now()}`,
-      title: newShortForm.title,
-      description: newShortForm.description || 'New campus study clip uploaded by faculty/student.',
-      author: user?.username || 'You',
-      role: user?.role || 'student',
-      department: newShortForm.department || user?.department || 'Computer Science',
-      views: '1',
-      likesCount: 1,
-      commentsCount: 0,
-      soundTrack: 'Original Campus Clip',
-      bgGradient: 'linear-gradient(135deg, #4A00E0 0%, #8E2DE2 100%)',
-      videoCodeSnippet: newShortForm.snippet || '// Quick study concept demonstration',
-      comments: []
-    };
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post('/api/shorts', {
+        title: newShortForm.title.trim(),
+        description: newShortForm.description || 'New campus study clip uploaded by faculty/student.',
+        department: newShortForm.department || user?.department || 'Computer Science',
+        videoCodeSnippet: newShortForm.snippet || '// Quick study concept demonstration',
+        soundTrack: 'Original Campus Clip',
+        bgGradient: 'linear-gradient(135deg, #4A00E0 0%, #8E2DE2 100%)'
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
 
-    setShortsList(prev => [createdShort, ...prev]);
-    setCurrentIndex(0);
-    setUploadOpen(false);
-    setNewShortForm({ title: '', description: '', department: 'Computer Science', snippet: '' });
-    toast.success('Campus Short published successfully');
+      const s = res.data;
+      const createdShort = {
+        id: s._id,
+        title: s.title,
+        description: s.description,
+        author: s.author?.username || user?.username || 'You',
+        role: s.author?.role || user?.role || 'student',
+        department: s.department || 'Computer Science',
+        views: `${s.views || 1}`,
+        likesCount: 0,
+        commentsCount: 0,
+        soundTrack: s.soundTrack || 'Original Campus Clip',
+        bgGradient: s.bgGradient || 'linear-gradient(135deg, #4A00E0 0%, #8E2DE2 100%)',
+        videoCodeSnippet: s.videoCodeSnippet || '',
+        comments: []
+      };
+
+      setShortsList(prev => [createdShort, ...prev]);
+      setCurrentIndex(0);
+      setUploadOpen(false);
+      setNewShortForm({ title: '', description: '', department: 'Computer Science', snippet: '' });
+      toast.success('Campus Short published to database');
+    } catch (err) {
+      console.error('Error uploading short:', err);
+      toast.error('Failed to publish campus short');
+    }
   };
 
   return (
